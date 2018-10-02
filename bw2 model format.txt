@@ -1,0 +1,41 @@
+BW2 Model Format
+
+MODL, 4 bytes total size 
+4 bytes name length, name 
+MODL, 4 bytes total size 
+
+32 bytes header
+4 bytes model version, always 0x65 in BW2
+4 bytes another model version? always 0xC8
+2 bytes short
+2 bytes short, some sort of count? => val A
+4 bytes int 
+
+16 bytes data 
+
+4 bytes bgf name length, bgf name 
+if val A is > 0, (val A) * 4 bytes of data follow 
+
+Sections: CNCT, MEMX, NODE
+MEMX goes without effect: 4 bytes ID, 4 bytes section size, 8 bytes data 
+
+NODE
+4 bytes ID, 4 bytes section size 
+4 bytes node name, node name 
+2 bytes short 
+2 bytes short 
+2 bytes short 
+2 bytes padding 
+4 bytes int 
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+4 bytes float
+if val A is > 0, (val A) * 4 bytes of data follow 
