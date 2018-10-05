@@ -1,6 +1,7 @@
 from OpenGL.GL import *
+from binascii import hexlify
 from struct import unpack
-from .vectors import Vector3
+from .vectors import Vector3, Matrix4x4
 from .read_binary import *
 from .gx import VertexDescriptor, VTX, VTXFMT
 
@@ -29,12 +30,51 @@ frag = [
 "}"
 ]
 
+class Material(object):
+    def __init__(self):
+        self.tex1 = None
+        self.tex2 = None
+        self.tex3 = None
+        self.tex4 = None
+        self.data = None
+
+    def from_file(self, f):
+        self.tex1 = f.read(0x20) #.strip(b"\x00")
+        self.tex2 = f.read(0x20) #.strip(b"\x00")
+        self.tex3 = f.read(0x20) #.strip(b"\x00")
+        self.tex4 = f.read(0x20) #.strip(b"\x00")
+        self.data = f.read(0x24) # rest
+
+        if self.tex1.count(b"\x00") == 32:
+            self.tex1 = None
+        if self.tex2.count(b"\x00") == 32:
+            self.tex2 = None
+        if self.tex3.count(b"\x00") == 32:
+            self.tex3 = None
+        if self.tex4.count(b"\x00") == 32:
+            self.tex4 = None
+
+    def textures(self):
+        if self.tex1 is not None:
+            yield self.tex1
+        if self.tex2 is not None:
+            yield self.tex2
+        if self.tex3 is not None:
+            yield self.tex3
+        if self.tex4 is not None:
+            yield self.tex4
+
+        raise StopIteration()
+
+    def __str__(self):
+        return str([x.strip(b"\x00") for x in self.textures()])
+
 
 class Model(object):
     def __init__(self):
         pass
 
-    def render(self):
+    def render(self, *args, **kwargs):
         pass
 
 
@@ -88,12 +128,40 @@ class BWModel(Model):
             self.nodes[child].parent = self.nodes[parent]
 
         assert f.tell() == start+cnctsize
+        self.render_order = []
+        for node in self.nodes:
+            node.create_displaylists()
+
+            self.render_order.append(node )
 
     def _skip_section(self, f, secname):
         name = f.read(4)
         assert name == secname
         size = read_uint32_le(f)
         f.read(size)
+
+    def sort_render_order(self, camerax, cameray, cameraz):
+        origin = Vector3(camerax, cameray, cameraz)
+
+        def distance(node):
+            dist_vec = origin - node.world_center
+            distance = dist_vec.norm()
+            return distance
+
+        self.render_order.sort(key = lambda x: distance(x), reverse=True)
+
+    def render(self, texturearchive):
+        #for node in self.nodes:
+        i = 0
+        for node in self.render_order:
+            #box.render()
+            if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0 or b"DUMMY" in node.name:
+                continue
+            node.render(texturearchive)
+            #print("Rendering first:", node.name, node.world_center.x, node.world_center.y, node.world_center.z)
+            #break
+            #node.transform.reset_transform()
+
 
 class LODLevel(object):
     def __init__(self):
@@ -118,7 +186,7 @@ class Node(object):
 
         self.bbox = None # Boundary box
         self.rnod = None # Only used by soldier models?
-        self.material = None
+        self.materials = []
 
         self.sections = []
 
@@ -134,9 +202,15 @@ class Node(object):
         self.vertices = []
         self.normals = []
         self.triprimitives = []
+        self.meshes = []
+        self.uvmaps = [[],[],[],[]]
 
         self.additionaldata = []
         self.lods = []
+
+        self._displaylists = []
+
+        self.world_center = Vector3(0, 0, 0)
 
     def setparent(self, parent):
         self.parent = parent
@@ -153,7 +227,7 @@ class Node(object):
         self.name = f.read(nodenamelength)
         headerstart = f.tell()
         # Do stuff
-        self.unkshort1, self.unkshort2, self.unkshort3, self.padd, self.xbs2count = unpack(">HHHHI", f.read(12))
+        self.unkshort1, self.unkshort2, self.unkshort3, self.padd, self.xbs2count = unpack("HHHHI", f.read(12))
         assert self.padd == 0
         # unkshort1, unkshort2, unkshort3, padd = unpack(">HHHH", f.read(8))
         floats = unpack("f" * 11, f.read(4 * 11))
@@ -170,6 +244,10 @@ class Node(object):
 
         x1, y1, z1, x2, y2, z2 = unpack("ffffff", f.read(4*6))
         self.bbox = Box((x1, y1, z1), (x2, y2, z2))
+
+        self.world_center.x = (x1 + x2) / 2.0
+        self.world_center.y = (y1 + y2) / 2.0
+        self.world_center.z = (z1 + z2) / 2.0
 
         secname = read_id(f)
         size = read_uint32_le(f)
@@ -189,9 +267,18 @@ class Node(object):
             size = read_uint32_le(f)
 
         assert secname == b"MATL"
-        self.material = f.read(size)
+        assert size % 0xA4 == 0
+        assert self.xbs2count*0xA4 == size
+
+        self.materials = []
+        for i in range(self.xbs2count):
+            material = Material()
+            material.from_file(f)
+            self.materials.append(material)
 
         vertexdesc = 0
+
+        self.uvmaps = [[], [], [], []]
 
         while f.tell() < nodeend:
             secname = read_id(f)
@@ -203,15 +290,42 @@ class Node(object):
                 assert size == 4
                 self.lods.append(val)
 
+            elif secname in (b"VUV1", b"VUV2", b"VUV3", b"VUV4"):
+                uvindex = secname[3] - b"1"[0]
+                #self.uvmaps[uvindex] = f.read(size)
+                """if size%8 == 0:
+                    curr = f.tell()
+                    print(hexlify(f.read(0x20)))
+                    f.seek(curr)"""
+
+                for i in range(size // 4):
+                    # scale = 2.0**0
+                    # u, v = read_int8(f)/(scale), read_int8(f)/(scale)
+                    # u, v = read_int16(f)/(scale), read_int16(f)/scale#read_byte(f)#read_float(f), read_float(f)
+                    #scale = 2 ** 11
+                    scale = 2.0**11# -1
+                    u, v = read_int16(f)/(scale), read_int16(f)/(scale)
+                    self.uvmaps[uvindex].append((u, v))
+
+                """else:
+                    for i in range(size // 4):
+                        # scale = 2.0**0
+                        # u, v = read_int8(f)/(scale), read_int8(f)/(scale)
+                        # u, v = read_int16(f)/(scale), read_int16(f)/scale#read_byte(f)#read_float(f), read_float(f)
+                        scale = 2 ** 11
+                        u, v = read_int16(f) / scale, read_int16(f) / scale
+                        self.uvmaps[uvindex].append((u, v))"""
+
             elif secname == b"XBS2":
-                print(hex(f.tell()))
+                #eprint(hex(f.tell()))
                 moremeshes = read_uint32(f) # maybe, unsure
                 unknown = f.read(8)
                 gx_data_size = read_uint32(f)
                 gx_data_end = f.tell() + gx_data_size
-                print(hex(gx_data_end), hex(gx_data_size))
+                #print(hex(gx_data_end), hex(gx_data_size))
 
-
+                mesh = []
+                self.meshes.append(mesh)
 
                 while f.tell() < gx_data_end:
                     opcode = read_uint8(f)
@@ -232,30 +346,19 @@ class Node(object):
                         x = read_uint32(f)
                         y = read_uint32(f)
 
-                        """elif opcode&0xFA == 0x90:  # Triangles
-                            vertex_count = read_uint16(f)
-                            prim = Primitive(0x90)
-    
-                            for i in range(vertex_count):
-                                matindex = read_uint8(f)
-                                #posIndex = read_uint8(f)
-                                posIndex = read_uint16(f)
-                                tex1index = read_uint16(f)
-                                prim.vertices.append(posIndex)
-    
-                            self.triprimitives.append(prim)"""
-
                     elif opcode & 0xFA == 0x98:  # Triangle strip
                         attribs = VertexDescriptor()
                         attribs.from_value(vertexdesc)
 
                         vertex_count = read_uint16(f)
                         prim = Primitive(0x98)
-                        print(bin(vertexdesc))
+                        #print(bin(vertexdesc))
                         print([x for x in attribs.active_attributes()])
 
                         for i in range(vertex_count):
-                            primattrib = [None, None]
+                            primattrib = [None, None,
+                                          None,None,None,None,None,None,None,None]
+
                             for attrib, fmt in attribs.active_attributes():
                                 # matindex = read_uint8(f)
 
@@ -275,7 +378,10 @@ class Node(object):
                                     else:
                                         raise RuntimeError("unknown normal format")
                                     primattrib[1] = normIndex
-
+                                elif attrib is not None and VTX.Tex0Coord <= attrib <= VTX.Tex7Coord:
+                                    coordindex = attrib - VTX.Tex0Coord
+                                    val = read_uint8(f)
+                                    primattrib[2+coordindex] = val
                                 elif fmt is not None:
                                     if fmt == VTXFMT.INDEX8:
                                         read_uint8(f)
@@ -283,13 +389,14 @@ class Node(object):
                                         read_uint16(f)
                                     else:
                                         RuntimeError("unknown fmt format")
+
                                 else:
                                     read_uint8(f)
 
                             prim.vertices.append(primattrib)
 
-                        self.triprimitives.append(prim)
-
+                        #self.triprimitives.append(prim)
+                        mesh.append(prim)
                     elif opcode == 0x00:
                         pass
                     else:
@@ -303,7 +410,7 @@ class Node(object):
                     f.read(size)
                     self.sections.append(secname)
                     break
-                print(self.name, size)
+                #print(self.name, size)
                 assert size%6 == 0
                 #assert size%4 == 0
 
@@ -337,34 +444,126 @@ class Node(object):
 
         assert f.tell() == nodeend
 
-    def render(self):
-        glColor3f(1.0, 0.0, 1.0)
-        #glPointSize(2.0)
+    def initialize_textures(self, texarchive):
+        for material in self.materials:
+            if material.tex1 is not None:
+                texarchive.initialize_texture(material.tex1)
 
-        #glBegin(GL_POINTS)
-        #for x, y, z in self.vertices:
-        #    glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
-        #glEnd()
-
-        for prim in self.triprimitives:
-            if prim.type == 0x98:
-                glBegin(GL_TRIANGLE_STRIP)
-            elif prim.type == 0x90:
-                glBegin(GL_TRIANGLES)
+    def render(self, texarchive):
+        #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
+        #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        for material, displist in zip(self.materials, self._displaylists):
+            glEnable(GL_TEXTURE_2D)
+            if material.tex1 is not None:
+                texture = texarchive.get_texture(material.tex1)
+                if texture is not None:
+                    tex, texid = texture
+                    #texname = str(tex.name.strip(b"\x00"), encoding="ascii")
+                    #tex.dump_to_file(texname+".png")
+                    #print("texture bound!", texid)
+                    #print(glGetError())
+                    glBindTexture(GL_TEXTURE_2D, texid)
+                    #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
+                    #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+                else:
+                    print("oops case 2 disable")
+                    glDisable(GL_TEXTURE_2D)
             else:
-                assert False
+                print("oops case 1 disable")
+                glDisable(GL_TEXTURE_2D)
 
-            for vertex in prim.vertices:
-                if len(vertex) == 0:
-                    continue
-                if len(vertex) == 2:
-                    posindex, normindex = vertex
+            glCallList(displist)
 
-                x,y,z = self.vertices[posindex]
-                if normindex is not None and len(self.normals) > 0:
-                    glColor3f(*self.normals[normindex])
-                glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
-            glEnd()
+    #def setup_world_center(self):
+    def create_displaylists(self):
+        if len(self._displaylists) > 0:
+            for i in self._displaylists:
+                glDeleteLists(i, 1)
+            self._displaylists = []
+
+        for material, mesh in zip(self.materials, self.meshes):
+            displist = glGenLists(1)
+            glNewList(displist, GL_COMPILE)
+            self.transform.backup_transform()
+            box = self.bbox
+            currnode = self
+            j = 0
+            while currnode is not None:
+                j += 1
+                currnode.transform.apply_transform()
+                currnode = currnode.parent
+                if j > 200:
+                    raise RuntimeError("Possibly endless loop detected!")
+
+
+            #glEnable(GL_TEXTURE_2D)
+            #print("node", self.name, "textures:", str(material))
+            #for tex in material.textures():
+
+            glColor3f(1.0, 1.0, 1.0)
+            #glDisable(GL_TEXTURE_2D)
+            """glColor3f(1.0, 1.0, 1.0)
+            glBegin(GL_TRIANGLE_FAN)
+            #glColor3f(1.0, 0.0, 1.0)
+            glTexCoord2f(0, 0)
+            glVertex3f(0, 0, 0)
+            glTexCoord2f(0, 1)
+            glVertex3f(0, 10, 0)
+            #glColor3f(1.0, 0.0, 0.0)
+            glTexCoord2f(1, 1)
+            glVertex3f(10, 10, 0)
+            glTexCoord2f(1, 0)
+            glVertex3f(10, 0, 0)
+            glEnd()"""
+
+            for prim in mesh:
+                if False:
+                    glBegin(GL_POINTS)
+                elif prim.type == 0x98:
+                    glBegin(GL_TRIANGLE_STRIP)
+                elif prim.type == 0x90:
+                    glBegin(GL_TRIANGLES)
+                else:
+                    assert False
+
+                for vertex in prim.vertices:
+                    if len(vertex) == 0:
+                        continue
+                    posindex, normindex = vertex[0], vertex[1]
+                    tex0 = vertex[2]
+                    tex1 = vertex[3]
+                    x,y,z = self.vertices[posindex]
+                    #if normindex is not None and len(self.normals) > 0:
+                    #    glColor3f(*self.normals[normindex])
+                    #print(vertex[2:])
+                    """if not tex0 is None:
+
+                        u,v = self.uvmaps[0][tex0]
+                        glTexCoord2f(u, v)
+                        glColor3f(1.0, 0.0, 0.0)
+                        print(u,v)
+                        glVertex3f(u*10, v*10, 0)"""
+                    if not tex1 is None:
+                        #print(tex1, self.uvmaps[0])
+                        if not tex0 is None:
+                            texcoordindex = tex0 << 8 | tex1
+                        else:
+                            texcoordindex = tex1
+                        u,v = self.uvmaps[0][texcoordindex]
+                        #if u < 0 or v < 0 or u > 1 or v > 1:
+                        #    print("HEy")
+                        glTexCoord2f(u, v)
+                        #glColor3f(1.0, 0.0, 0.0)
+                        #print(u,v)
+                        #glVertex3f(u*10, v*10, 0)
+                    glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
+                glEnd()
+            self.transform.reset_transform()
+            glEndList()
+            self._displaylists.append(displist)
+
+
+
 
 class Transform(object):
     def __init__(self, floats):

@@ -16,10 +16,7 @@ import PyQt5.QtCore as QtCore
 
 from custom_widgets import catch_exception
 from configuration import read_config, make_default_config, save_cfg
-
-#import pikmingen_widgets as pikwidgets
-#from pikmingen_widgets import (GenMapViewer, PikminSideWidget, PikObjectEditor, open_error_dialog,
-#                               catch_exception_with_dialog)
+from lib.texture import TextureArchive
 
 from bw_model_viewer_widgets import RenderWindow, catch_exception, catch_exception_with_dialog, open_error_dialog
 #from lib.model_rendering import Waterbox
@@ -33,6 +30,7 @@ class GenEditor(QMainWindow):
         self.res_file = None
 
         self.setup_ui()
+        self.texture_archive = None
 
         try:
             self.configuration = read_config()
@@ -273,10 +271,11 @@ class GenEditor(QMainWindow):
             with openfunc(filepath, "rb") as f:
                 try:
                     self.res_file = BWArchive(f)
+                    self.texture_archive = TextureArchive(self.res_file)
 
                     for model in self.res_file.models:
                         self.model_list.addItem(str(model.res_name, encoding="ascii"))
-
+                    self.waterbox_renderer.texarchive = self.texture_archive
 
 
                     print("File loaded")

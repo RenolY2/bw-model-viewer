@@ -112,7 +112,7 @@ class TextureEntryBW2(BWResource):
 
         super().__init__(name, size, memview)#, section_offset=0x54)
 
-        self.res_name = self.data[0:0x16]#self._header[0:0x16]
+        self.res_name = self.data[0:0x20]#self._header[0:0x16]
 
     """def pack(self):
         data = io.BytesIO()

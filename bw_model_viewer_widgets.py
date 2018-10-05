@@ -93,6 +93,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
 
         self.verts = []
         self.faces = []
+        self.texarchive = None
 
         self.main_model = None
 
@@ -140,6 +141,8 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         self.collision = []
 
         self.models = []
+
+        self.current_render_index = 0
 
     def reset(self):
         self.verts = []
@@ -330,40 +333,137 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         data.fileobj.seek(0)
         f = data.fileobj
 
-        self.main_model = glGenLists(1)
-        model = BWModel()
-        model.from_file(f)
 
+        model = BWModel()
+
+
+        model.from_file(f)
+        #for node in model.nodes:
+        #    node.initialize_textures(self.texarchive)
+        self.main_model = model
+        return
+        if self.main_model is not None:
+            glDeleteLists(self.main_model, 1)
+        self.main_model = glGenLists(1)
         glNewList(self.main_model, GL_COMPILE)
         i = 0
         print("===")
         print([hex(i) for i in model.additionaldata])
-        for node in model.nodes:
-            if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0:
-                continue
-            parentname = None
-            if node.parent is not None:
-                parentname = node.parent.name
-                
-            print(hex(i), hex(node.unkshort1), hex(node.unkshort2), hex(node.unkshort3), node.name, [hex(i) for i in node.additionaldata], node.sections)
+        try:
+            i = 0
+            max_renderable_index = 0
+            for node in model.nodes:
+                if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0:
+                    continue
+                max_renderable_index += 1
 
-            #for transform, box in boundingboxes:
-            node.transform.backup_transform()
-            box = node.bbox
-            currnode = node
-            j = 0
-            while currnode is not None:
-                j += 1
-                currnode.transform.apply_transform()
-                currnode = currnode.parent
-                if j > 200:
-                    raise RuntimeError("Possibly endless loop detected!")
+            for node in model.nodes:
+                if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0:
+                    continue
 
-            box.render()
-            node.render()
+                i += 1
+                if self.current_render_index == 0:
+                    pass
+                elif self.current_render_index > 0:
+                    if self.current_render_index > max_renderable_index:
+                        self.current_render_index = 0
 
-            node.transform.reset_transform()
-            i += 1
+                    elif i != self.current_render_index:
+                        continue
+                else:
+                    continue
+
+                parentname = None
+                if node.parent is not None:
+                    parentname = node.parent.name
+
+                print(hex(i), hex(node.unkshort1), hex(node.unkshort2), hex(node.unkshort3), node.name, [hex(i) for i in node.additionaldata], node.sections)
+
+
+                #for transform, box in boundingboxes:
+                node.transform.backup_transform()
+                box = node.bbox
+                currnode = node
+                j = 0
+                while currnode is not None:
+                    j += 1
+                    currnode.transform.apply_transform()
+                    currnode = currnode.parent
+                    if j > 200:
+                        raise RuntimeError("Possibly endless loop detected!")
+
+                box.render()
+                node.render(self.texarchive)
+
+                node.transform.reset_transform()
+                i += 1
+        except Exception as error:
+            self.main_model = None
+            print(error)
+            raise error
+
+        glEndList()
+
+        self.do_redraw()
+
+    def re_render(self, model):
+        if self.main_model is not None:
+            glDeleteLists(self.main_model, 1)
+        self.main_model = glGenLists(1)
+        glNewList(self.main_model, GL_COMPILE)
+        try:
+            i = 0
+            max_renderable_index = 0
+            for node in model.nodes:
+                if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0:
+                    continue
+                max_renderable_index += 1
+
+            for node in model.nodes:
+
+
+                if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0:
+                    continue
+
+                i += 1
+                if self.current_render_index == 0:
+                    pass
+                elif self.current_render_index > 0:
+                    if self.current_render_index > max_renderable_index:
+                        self.current_render_index = 0
+
+                    elif i != self.current_render_index:
+                        continue
+                else:
+                    continue
+
+                parentname = None
+                if node.parent is not None:
+                    parentname = node.parent.name
+
+                print(hex(i), hex(node.unkshort1), hex(node.unkshort2), hex(node.unkshort3), node.name, [hex(i) for i in node.additionaldata], node.sections)
+
+                #for transform, box in boundingboxes:
+                node.transform.backup_transform()
+                box = node.bbox
+                currnode = node
+                j = 0
+                while currnode is not None:
+                    j += 1
+                    currnode.transform.apply_transform()
+                    currnode = currnode.parent
+                    if j > 200:
+                        raise RuntimeError("Possibly endless loop detected!")
+
+                box.render()
+                node.render(self.texarchive)
+
+                node.transform.reset_transform()
+                i += 1
+        except Exception as error:
+            self.main_model = None
+            print(error)
+            raise error
 
         glEndList()
 
@@ -378,6 +478,8 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         glClearColor(1.0, 1.0, 1.0, 0.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) # clear the screen
         glDisable(GL_CULL_FACE)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         # set yellow color for subsequent drawing rendering calls
 
 
@@ -436,8 +538,15 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         if self.main_model is None:
             return
 
+        """for node in self.model.nodes:
+            for material in node.materials:
+                if material.tex1 is not None:
+                    self.texarchive.load_texture(material.tex1)"""
         #print("drawing", self.main_model, type(self.main_model))
-        glCallList(self.main_model)
+        #glCallList(self.main_model)
+        #self.main_model.sort_render_order(self.camera_direction.x, self.camera_direction.y, self.camera_direction.z)
+        #self.main_model.sort_render_order(self.offset_x, self.camera_height, -self.offset_y)
+        self.main_model.render(self.texarchive)
         glFinish()
 
         #print("drawn in", default_timer() - start, "s")
@@ -529,6 +638,11 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
     def mousePressEvent(self, event):
         if event.buttons() & Qt.RightButton:
             self.last_move = (event.x(), event.y())
+
+        elif event.buttons() & Qt.MiddleButton:
+            print("hi", self.current_render_index)
+            self.current_render_index += 1
+            self.re_render(self.model)
 
         elif event.buttons() & Qt.LeftButton:
             if self.camera_direction is not None:

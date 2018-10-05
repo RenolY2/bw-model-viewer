@@ -1,5 +1,5 @@
 from math import sqrt
-
+from io import StringIO
 
 class Vector3(object):
     def __init__(self, x, y, z):
@@ -77,6 +77,26 @@ class Vector3(object):
 
     def __str__(self):
         return str((self.x, self.y, self.z))
+
+
+class Vector4(Vector3):
+    def __init__(self, x, y, z, w):
+        Vector3.__init__(self, x, y, z)
+        self.w = w
+
+    def copy(self):
+        return Vector4(self.x, self.y, self.z, self.w)
+
+    def norm(self):
+        return sqrt(self.x**2 + self.y**2 + self.z**2 + self.w**2)
+
+    def normalize(self):
+        norm = self.norm()
+        self.x /= norm
+        self.y /= norm
+        self.z /= norm
+        self.w /= norm
+
 
 
 class Plane(object):
@@ -163,3 +183,86 @@ class Line(object):
         else:
             return False
 
+
+class Matrix4x4(object):
+    def __init__(self,
+                 val1A, val1B, val1C, val1D,
+                 val2A, val2B, val2C, val2D,
+                 val3A, val3B, val3C, val3D,
+                 val4A, val4B, val4C, val4D):
+
+        self.a1 = val1A
+        self.b1 = val1B
+        self.c1 = val1C
+        self.d1 = val1D
+
+        self.a2 = val2A
+        self.b2 = val2B
+        self.c2 = val2C
+        self.d2 = val2D
+
+        self.a3 = val3A
+        self.b3 = val3B
+        self.c3 = val3C
+        self.d3 = val3D
+
+        self.a4 = val4A
+        self.b4 = val4B
+        self.c4 = val4C
+        self.d4 = val4D
+
+    def transpose(self):
+        self.__init__(self.a1, self.a2, self.a3, self.a4,
+                      self.b1, self.b2, self.b3, self.b4,
+                      self.c1, self.c2, self.c3, self.c4,
+                      self.d1, self.d2, self.d3, self.d4)
+
+    def multiply_vec4(self, x, y, z, w):
+        print("MATRIX MULTIPLICATION INPUT", x, y, z ,w )
+        newx = self.a1 * x + self.b1 * y + self.c1 * z + self.d1 * w
+        newy = self.a2 * x + self.b2 * y + self.c2 * z + self.d2 * w
+        newz = self.a3 * x + self.b3 * y + self.c3 * z + self.d3 * w
+        neww = self.a4 * x + self.b4 * y + self.c4 * z + self.d4 * w
+        print("MATRIX MULTIPLICATION OUTPUT", newx, newy, newz, neww)
+        return newx, newy, newz, neww
+
+    def __str__(self):
+        out = StringIO()
+        out.write("{\n")
+        out.write(str(self.a1))
+        out.write(", ")
+        out.write(str(self.b1))
+        out.write(", ")
+        out.write(str(self.c1))
+        out.write(", ")
+        out.write(str(self.d1))
+        out.write(",\n")
+
+        out.write(str(self.a2))
+        out.write(", ")
+        out.write(str(self.b2))
+        out.write(", ")
+        out.write(str(self.c2))
+        out.write(", ")
+        out.write(str(self.d2))
+        out.write(",\n")
+
+        out.write(str(self.a3))
+        out.write(", ")
+        out.write(str(self.b3))
+        out.write(", ")
+        out.write(str(self.c3))
+        out.write(", ")
+        out.write(str(self.d3))
+        out.write(",\n")
+
+        out.write(str(self.a4))
+        out.write(", ")
+        out.write(str(self.b4))
+        out.write(", ")
+        out.write(str(self.c4))
+        out.write(", ")
+        out.write(str(self.d4))
+        out.write("\n}")
+
+        return out.getvalue()
