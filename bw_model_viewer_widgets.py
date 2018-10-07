@@ -11,6 +11,9 @@ from lib.vectors import Vector3, Plane, Triangle, Line
 from custom_widgets import catch_exception
 from lib.read_binary import *
 from lib.model_rendering import Box, Transform, Node, BWModel
+from lib.shader import create_shader
+
+
 def catch_exception_with_dialog(func):
     def handle(*args, **kwargs):
         try:
@@ -143,6 +146,13 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         self.models = []
 
         self.current_render_index = 0
+
+    @catch_exception
+    def initializeGL(self):
+        self.shader = create_shader()
+
+        print(self.shader)
+        #self.shadershader.setUniform("firstSampler", 0);
 
     def reset(self):
         self.verts = []
@@ -478,8 +488,8 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         glClearColor(1.0, 1.0, 1.0, 0.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) # clear the screen
         glDisable(GL_CULL_FACE)
-        glEnable(GL_BLEND)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        #glEnable(GL_BLEND)
+        #glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         # set yellow color for subsequent drawing rendering calls
 
 
@@ -546,7 +556,12 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         #glCallList(self.main_model)
         #self.main_model.sort_render_order(self.camera_direction.x, self.camera_direction.y, self.camera_direction.z)
         #self.main_model.sort_render_order(self.offset_x, self.camera_height, -self.offset_y)
+        glUseProgram(self.shader)
+        texvar = glGetUniformLocation(self.shader, "tex")
+        #print(texvar, self.shader, type(self.shader))
+        glUniform1i(texvar, 0)
         self.main_model.render(self.texarchive)
+        glUseProgram(0)
         glFinish()
 
         #print("drawn in", default_timer() - start, "s")

@@ -449,7 +449,7 @@ class Node(object):
             if material.tex1 is not None:
                 texarchive.initialize_texture(material.tex1)
 
-    def render(self, texarchive):
+    def render(self, texarchive):#, program):
         #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
         #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
         for material, displist in zip(self.materials, self._displaylists):
@@ -462,6 +462,7 @@ class Node(object):
                     #tex.dump_to_file(texname+".png")
                     #print("texture bound!", texid)
                     #print(glGetError())
+                    glActiveTexture(GL_TEXTURE0)
                     glBindTexture(GL_TEXTURE_2D, texid)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
@@ -552,7 +553,8 @@ class Node(object):
                         u,v = self.uvmaps[0][texcoordindex]
                         #if u < 0 or v < 0 or u > 1 or v > 1:
                         #    print("HEy")
-                        glTexCoord2f(u, v)
+                        #glTexCoord2f(u, v)
+                        glVertexAttrib2f(2, u, v)
                         #glColor3f(1.0, 0.0, 0.0)
                         #print(u,v)
                         #glVertex3f(u*10, v*10, 0)

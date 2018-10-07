@@ -218,12 +218,12 @@ class Matrix4x4(object):
                       self.d1, self.d2, self.d3, self.d4)
 
     def multiply_vec4(self, x, y, z, w):
-        print("MATRIX MULTIPLICATION INPUT", x, y, z ,w )
+        #print("MATRIX MULTIPLICATION INPUT", x, y, z ,w )
         newx = self.a1 * x + self.b1 * y + self.c1 * z + self.d1 * w
         newy = self.a2 * x + self.b2 * y + self.c2 * z + self.d2 * w
         newz = self.a3 * x + self.b3 * y + self.c3 * z + self.d3 * w
         neww = self.a4 * x + self.b4 * y + self.c4 * z + self.d4 * w
-        print("MATRIX MULTIPLICATION OUTPUT", newx, newy, newz, neww)
+        #print("MATRIX MULTIPLICATION OUTPUT", newx, newy, newz, neww)
         return newx, newy, newz, neww
 
     def __str__(self):
