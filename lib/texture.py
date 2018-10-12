@@ -29,6 +29,10 @@ pixelmask_format = Struct(">I")
 colors_unpack = colors_format.unpack
 pixelmask_unpack = pixelmask_format.unpack
 
+
+DXT1 = b"\x00\x00\x00\x001TXD"
+IA8 = b"\x00\x00\x00\x001TXD"
+
 class Texture(object):
     def __init__(self, name):
         self.name = name

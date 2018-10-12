@@ -150,14 +150,14 @@ class BWModel(Model):
 
         self.render_order.sort(key = lambda x: distance(x), reverse=True)
 
-    def render(self, texturearchive):
+    def render(self, texturearchive, shader):
         #for node in self.nodes:
         i = 0
         for node in self.render_order:
             #box.render()
             if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0 or b"DUMMY" in node.name:
                 continue
-            node.render(texturearchive)
+            node.render(texturearchive, shader)
             #print("Rendering first:", node.name, node.world_center.x, node.world_center.y, node.world_center.z)
             #break
             #node.transform.reset_transform()
@@ -211,6 +211,8 @@ class Node(object):
         self._displaylists = []
 
         self.world_center = Vector3(0, 0, 0)
+
+        self._mvmat = None
 
     def setparent(self, parent):
         self.parent = parent
@@ -299,10 +301,6 @@ class Node(object):
                     f.seek(curr)"""
 
                 for i in range(size // 4):
-                    # scale = 2.0**0
-                    # u, v = read_int8(f)/(scale), read_int8(f)/(scale)
-                    # u, v = read_int16(f)/(scale), read_int16(f)/scale#read_byte(f)#read_float(f), read_float(f)
-                    #scale = 2 ** 11
                     scale = 2.0**11# -1
                     u, v = read_int16(f)/(scale), read_int16(f)/(scale)
                     self.uvmaps[uvindex].append((u, v))
@@ -353,7 +351,7 @@ class Node(object):
                         vertex_count = read_uint16(f)
                         prim = Primitive(0x98)
                         #print(bin(vertexdesc))
-                        print([x for x in attribs.active_attributes()])
+                        #print([x for x in attribs.active_attributes()])
 
                         for i in range(vertex_count):
                             primattrib = [None, None,
@@ -449,10 +447,35 @@ class Node(object):
             if material.tex1 is not None:
                 texarchive.initialize_texture(material.tex1)
 
-    def render(self, texarchive):#, program):
+    def render(self, texarchive, shader):#, program):
         #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
         #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        for material, displist in zip(self.materials, self._displaylists):
+        #print(len(self.materials), len(self._displaylists))
+        #print(self.xbs2count, self.sections)
+        #assert len(self.materials) == len(self._displaylists)
+        #for material, displist in zip(self.materials, self._displaylists):
+        if self._mvmat is None:
+            self.transform.backup_transform()
+            currnode = self
+            j = 0
+            while currnode is not None:
+                j += 1
+                currnode.transform.apply_transform()
+                currnode = currnode.parent
+                if j > 200:
+                    raise RuntimeError("Possibly endless loop detected!")
+            self._mvmat = glGetFloatv(GL_MODELVIEW_MATRIX)
+            self.transform.reset_transform()
+
+        matloc = glGetUniformLocation(shader, "modelview")
+        glUniformMatrix4fv(matloc, 1, False, self._mvmat)
+
+        for i, displist in enumerate(self._displaylists):
+            if i >= len(self.materials):
+                material = self.materials[-1]
+            else:
+                material = self.materials[i]
+
             glEnable(GL_TEXTURE_2D)
             if material.tex1 is not None:
                 texture = texarchive.get_texture(material.tex1)
@@ -466,12 +489,18 @@ class Node(object):
                     glBindTexture(GL_TEXTURE_2D, texid)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-                else:
+            """   else:
                     print("oops case 2 disable")
                     glDisable(GL_TEXTURE_2D)
             else:
                 print("oops case 1 disable")
-                glDisable(GL_TEXTURE_2D)
+                glDisable(GL_TEXTURE_2D)"""
+            if material.tex2 is not None:
+                texture = texarchive.get_texture(material.tex2)
+                if texture is not None:
+                    tex, texid = texture
+                    glActiveTexture(GL_TEXTURE1)
+                    glBindTexture(GL_TEXTURE_2D, texid)
 
             glCallList(displist)
 
@@ -482,7 +511,13 @@ class Node(object):
                 glDeleteLists(i, 1)
             self._displaylists = []
 
-        for material, mesh in zip(self.materials, self.meshes):
+        #for material, mesh in zip(self.materials, self.meshes):
+        for i, mesh in enumerate(self.meshes):
+            if i >= len(self.materials):
+                material = self.materials[-1]
+            else:
+                material = self.materials[i]
+
             displist = glGenLists(1)
             glNewList(displist, GL_COMPILE)
             self.transform.backup_transform()
@@ -555,17 +590,20 @@ class Node(object):
                         #    print("HEy")
                         #glTexCoord2f(u, v)
                         glVertexAttrib2f(2, u, v)
+                        glVertexAttrib2f(4, u, v)
                         #glColor3f(1.0, 0.0, 0.0)
                         #print(u,v)
                         #glVertex3f(u*10, v*10, 0)
+
+                    print(self.sections)
+                    print(vertex, material.tex1, material.tex2, material.tex3, material.tex4)
                     glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
+                    if normindex is not None:
+                        glVertexAttrib3f(3, *self.normals[normindex])
                 glEnd()
             self.transform.reset_transform()
             glEndList()
             self._displaylists.append(displist)
-
-
-
 
 class Transform(object):
     def __init__(self, floats):

@@ -298,6 +298,7 @@ class GenEditor(QMainWindow):
         row = self.model_list.currentRow()
 
         self.waterbox_renderer.create_drawlist(self.res_file.models[row])
+        self.waterbox_renderer.do_redraw()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
 
