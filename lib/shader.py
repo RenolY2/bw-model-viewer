@@ -6,22 +6,31 @@ layout(location = 0) in vec4 vert;
 layout(location = 2) in vec2 texCoord;
 layout(location = 3) in vec3 normal;
 layout(location = 4) in vec2 bumpCoord;
+layout(location = 5) in vec3 binormal;
+layout(location = 6) in vec3 tangent;
 
 out vec2 fragTexCoord;
 out vec3 vecNormal;
+out vec3 vecBinormal;
+out vec3 vecTangent;
 out vec2 bumpTexCoord;
 
 uniform mat4 modelview;
-
-out mat4 fragmodelview;
 
 void main(void)
 {
     // Pass the tex coord straight through to the fragment shader
     fragTexCoord = texCoord;
     bumpTexCoord = bumpCoord;
-    fragmodelview = modelview;
+    //fragmodelview = modelview;
+    
     vecNormal = vec3(modelview*vec4(normal, 0.0));//vec3(gl_ModelViewProjectionMatrix*vec4(normal, 0.0));
+    vecBinormal = vec3(modelview*vec4(binormal, 0.0));
+    vecTangent = vec3(modelview*vec4(tangent, 0.0));
+    //vecNormal = normal;
+    //vecBinormal = binormal;
+    //vecTangent = tangent;
+    
     //vec4 a = vec4(vert, 1.0);
     vec4 a = vert;
     //a.x = a.x * 0.5;
@@ -36,8 +45,9 @@ fragshader = """
 #version 330
 in vec2 fragTexCoord; //this is the texture coord
 in vec3 vecNormal; // normal vector
+in vec3 vecBinormal;
+in vec3 vecTangent;
 in vec2 bumpTexCoord; // coordinates on bump texture
-in mat4 fragmodelview;
 
 out vec4 finalColor; //this is the output color of the pixel
 uniform sampler2D tex;
@@ -55,25 +65,35 @@ void clampvector(in vec4 vector, out vec4 result) {
 
 void main (void)
 {
-
-    
     //finalColor = vec4(1.0, 1.0, 0.0, 1.0);
     //vec4 color = vec4(fragTexCoord, 1.0, 1.0);
     //finalColor = texture(tex, fragTexCoord);
     vec4 color = texture(tex, fragTexCoord);
+    
     if (color.a < 0.5) {
         discard;
     }
+    
     vec4 bumpvec = texture(bump, bumpTexCoord);
-    float angle = dot(light, vecNormal) * inversesqrt(length(light)) * inversesqrt(length(vecNormal));
+    float offset_tangent = (bumpvec.a-0.5)*2;
+    float offset_binormal = (bumpvec.r-0.5)*2;
+    
+    vec3 finalVecNormal = vecNormal + offset_binormal*vecBinormal + offset_tangent*vecTangent;
+    finalVecNormal = normalize(finalVecNormal);
+    vec3 normlight = normalize(light);
+    
+    //float angle = dot(light, vecNormal) * inversesqrt(length(light)) * inversesqrt(length(vecNormal));
+    float angle = dot(normlight, finalVecNormal);
     if (length(vecNormal) == 0.0) {
-        angle = 1.0;
+        angle = -1.0;
     }
-    angle = clamp(angle, 0.3, 1.0);
+    angle = clamp((-1*angle+1)/2.0, 0.2, 1.0);
     //float angle = 1.0;
     //finalColor = color*angle;
+    //vec4 lightcolor = vec4(1.0, 0.0, 0.0, 1.0);
     clampvector(color*angle, finalColor);
-    finalColor = texture(bump, bumpTexCoord);
+    //finalColor = vec4(vecNormal, 0.0);
+    //finalColor = texture(bump, bumpTexCoord);
 }
 """
 

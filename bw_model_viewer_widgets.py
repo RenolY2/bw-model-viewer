@@ -566,10 +566,18 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         currenttime = default_timer()
         lightvar = glGetUniformLocation(self.shader, "light")
         rot = (currenttime % 9)*40
-        glUniform3fv(lightvar, 1, (sin(radians(rot)), -0.5, cos(radians(rot))))
+        glUniform3fv(lightvar, 1, (sin(radians(rot)), -1, cos(radians(rot))))
         self.do_redraw()
+        i = 0
+        for node in self.main_model.nodes:
+            if node.do_skip():
+                continue
 
-        self.main_model.render(self.texarchive, self.shader)
+            i += 1
+        if self.current_render_index > i:
+            self.current_render_index = 0
+
+        self.main_model.render(self.texarchive, self.shader, self.current_render_index)
         glUseProgram(0)
         glFinish()
 
@@ -666,9 +674,10 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         elif event.buttons() & Qt.MiddleButton:
             print("hi", self.current_render_index)
             self.current_render_index += 1
-            self.re_render(self.model)
+            #self.re_render(self.model)
 
         elif event.buttons() & Qt.LeftButton:
+            self.current_render_index = 0
             if self.camera_direction is not None:
                 self.camera_direction.normalize()
 

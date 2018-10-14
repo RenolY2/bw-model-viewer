@@ -150,12 +150,16 @@ class BWModel(Model):
 
         self.render_order.sort(key = lambda x: distance(x), reverse=True)
 
-    def render(self, texturearchive, shader):
+    def render(self, texturearchive, shader, j=0):
         #for node in self.nodes:
         i = 0
         for node in self.render_order:
             #box.render()
-            if b"NODRAW" in node.name or b"COLLIDE" in node.name or b"COLLISION" in node.name or node.xbs2count == 0 or b"DUMMY" in node.name:
+            if node.do_skip():
+                continue
+            i += 1
+
+            if (j > 0 and j != i):
                 continue
             node.render(texturearchive, shader)
             #print("Rendering first:", node.name, node.world_center.x, node.world_center.y, node.world_center.z)
@@ -201,6 +205,8 @@ class Node(object):
 
         self.vertices = []
         self.normals = []
+        self.binormals = []
+        self.tangents = []
         self.triprimitives = []
         self.meshes = []
         self.uvmaps = [[],[],[],[]]
@@ -213,6 +219,9 @@ class Node(object):
         self.world_center = Vector3(0, 0, 0)
 
         self._mvmat = None
+
+    def do_skip(self):
+        return b"NODRAW" in self.name or b"COLLIDE" in self.name or b"COLLISION" in self.name or self.xbs2count == 0 or b"DUMMY" in self.name
 
     def setparent(self, parent):
         self.parent = parent
@@ -294,36 +303,22 @@ class Node(object):
 
             elif secname in (b"VUV1", b"VUV2", b"VUV3", b"VUV4"):
                 uvindex = secname[3] - b"1"[0]
-                #self.uvmaps[uvindex] = f.read(size)
-                """if size%8 == 0:
-                    curr = f.tell()
-                    print(hexlify(f.read(0x20)))
-                    f.seek(curr)"""
 
                 for i in range(size // 4):
-                    scale = 2.0**11# -1
+                    scale = 2.0**11
                     u, v = read_int16(f)/(scale), read_int16(f)/(scale)
                     self.uvmaps[uvindex].append((u, v))
 
-                """else:
-                    for i in range(size // 4):
-                        # scale = 2.0**0
-                        # u, v = read_int8(f)/(scale), read_int8(f)/(scale)
-                        # u, v = read_int16(f)/(scale), read_int16(f)/scale#read_byte(f)#read_float(f), read_float(f)
-                        scale = 2 ** 11
-                        u, v = read_int16(f) / scale, read_int16(f) / scale
-                        self.uvmaps[uvindex].append((u, v))"""
-
             elif secname == b"XBS2":
                 #eprint(hex(f.tell()))
-                moremeshes = read_uint32(f) # maybe, unsure
-                unknown = f.read(8)
+                materialindex = read_uint32(f)
+                unknown = (read_uint32(f), read_uint32(f))
                 gx_data_size = read_uint32(f)
                 gx_data_end = f.tell() + gx_data_size
                 #print(hex(gx_data_end), hex(gx_data_size))
 
                 mesh = []
-                self.meshes.append(mesh)
+                self.meshes.append((materialindex, mesh))
 
                 while f.tell() < gx_data_end:
                     opcode = read_uint8(f)
@@ -429,7 +424,10 @@ class Node(object):
                     #self.normals.append((read_int8(f), read_int8(f), read_int8(f)))
                     #f.read(6)
                     self.normals.append((read_float(f), read_float(f), read_float(f)))
-                    f.read(24)
+                    self.binormals.append((read_float(f), read_float(f), read_float(f)))
+
+                    self.tangents.append((read_float(f), read_float(f), read_float(f)))
+
             else:
                 f.read(size)
             self.sections.append(secname)
@@ -470,11 +468,8 @@ class Node(object):
         matloc = glGetUniformLocation(shader, "modelview")
         glUniformMatrix4fv(matloc, 1, False, self._mvmat)
 
-        for i, displist in enumerate(self._displaylists):
-            if i >= len(self.materials):
-                material = self.materials[-1]
-            else:
-                material = self.materials[i]
+        for i, displist in self._displaylists:
+            material = self.materials[i]
 
             glEnable(GL_TEXTURE_2D)
             if material.tex1 is not None:
@@ -489,12 +484,13 @@ class Node(object):
                     glBindTexture(GL_TEXTURE_2D, texid)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-            """   else:
+                else:
                     print("oops case 2 disable")
                     glDisable(GL_TEXTURE_2D)
             else:
                 print("oops case 1 disable")
-                glDisable(GL_TEXTURE_2D)"""
+                glDisable(GL_TEXTURE_2D)
+
             if material.tex2 is not None:
                 texture = texarchive.get_texture(material.tex2)
                 if texture is not None:
@@ -507,16 +503,13 @@ class Node(object):
     #def setup_world_center(self):
     def create_displaylists(self):
         if len(self._displaylists) > 0:
-            for i in self._displaylists:
+            for matindex, i in self._displaylists:
                 glDeleteLists(i, 1)
             self._displaylists = []
 
         #for material, mesh in zip(self.materials, self.meshes):
-        for i, mesh in enumerate(self.meshes):
-            if i >= len(self.materials):
-                material = self.materials[-1]
-            else:
-                material = self.materials[i]
+        for i, mesh in self.meshes:
+            material = self.materials[i]
 
             displist = glGenLists(1)
             glNewList(displist, GL_COMPILE)
@@ -537,25 +530,22 @@ class Node(object):
             #for tex in material.textures():
 
             glColor3f(1.0, 1.0, 1.0)
-            #glDisable(GL_TEXTURE_2D)
-            """glColor3f(1.0, 1.0, 1.0)
+            """
             glBegin(GL_TRIANGLE_FAN)
             #glColor3f(1.0, 0.0, 1.0)
-            glTexCoord2f(0, 0)
-            glVertex3f(0, 0, 0)
-            glTexCoord2f(0, 1)
-            glVertex3f(0, 10, 0)
+            glVertexAttrib2f(2, 0, 0)
+            glVertex3f(0, 0, 0+i*10)
+            glVertexAttrib2f(2, 0, 1)
+            glVertex3f(0, 10, 0+i*10)
             #glColor3f(1.0, 0.0, 0.0)
-            glTexCoord2f(1, 1)
-            glVertex3f(10, 10, 0)
-            glTexCoord2f(1, 0)
-            glVertex3f(10, 0, 0)
+            glVertexAttrib2f(2, 1, 1)
+            glVertex3f(10, 10, 0+i*10)
+            glVertexAttrib2f(2, 1, 0)
+            glVertex3f(10, 0, 0+i*10)
             glEnd()"""
 
             for prim in mesh:
-                if False:
-                    glBegin(GL_POINTS)
-                elif prim.type == 0x98:
+                if prim.type == 0x98:
                     glBegin(GL_TRIANGLE_STRIP)
                 elif prim.type == 0x90:
                     glBegin(GL_TRIANGLES)
@@ -569,16 +559,7 @@ class Node(object):
                     tex0 = vertex[2]
                     tex1 = vertex[3]
                     x,y,z = self.vertices[posindex]
-                    #if normindex is not None and len(self.normals) > 0:
-                    #    glColor3f(*self.normals[normindex])
-                    #print(vertex[2:])
-                    """if not tex0 is None:
 
-                        u,v = self.uvmaps[0][tex0]
-                        glTexCoord2f(u, v)
-                        glColor3f(1.0, 0.0, 0.0)
-                        print(u,v)
-                        glVertex3f(u*10, v*10, 0)"""
                     if not tex1 is None:
                         #print(tex1, self.uvmaps[0])
                         if not tex0 is None:
@@ -586,24 +567,22 @@ class Node(object):
                         else:
                             texcoordindex = tex1
                         u,v = self.uvmaps[0][texcoordindex]
-                        #if u < 0 or v < 0 or u > 1 or v > 1:
-                        #    print("HEy")
-                        #glTexCoord2f(u, v)
+
                         glVertexAttrib2f(2, u, v)
                         glVertexAttrib2f(4, u, v)
-                        #glColor3f(1.0, 0.0, 0.0)
-                        #print(u,v)
-                        #glVertex3f(u*10, v*10, 0)
 
-                    print(self.sections)
-                    print(vertex, material.tex1, material.tex2, material.tex3, material.tex4)
-                    glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
                     if normindex is not None:
                         glVertexAttrib3f(3, *self.normals[normindex])
+                        if len(self.binormals) > 0:
+                            glVertexAttrib3f(5, *self.binormals[normindex])
+                            glVertexAttrib3f(6, *self.tangents[normindex])
+                    glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
+
                 glEnd()
             self.transform.reset_transform()
             glEndList()
-            self._displaylists.append(displist)
+            self._displaylists.append((i, displist))
+
 
 class Transform(object):
     def __init__(self, floats):
@@ -636,8 +615,6 @@ class Transform(object):
         """for i in (self.floats[3], self.floats[4], self.floats[5], self.floats[6], self.floats[7]):
             print(abs(i))
             assert abs(i) <= 1.0"""
-
-
 
     def reset_transform(self):
         glPopMatrix()
