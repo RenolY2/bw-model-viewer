@@ -221,7 +221,7 @@ class Node(object):
         self._mvmat = None
 
     def do_skip(self):
-        return b"NODRAW" in self.name or b"COLLIDE" in self.name or b"COLLISION" in self.name or self.xbs2count == 0 or b"DUMMY" in self.name
+        return b"NODRAW" in self.name or b"COLLIDE" in self.name or b"COLLISION" in self.name or self.xbs2count == 0
 
     def setparent(self, parent):
         self.parent = parent
@@ -423,10 +423,10 @@ class Node(object):
                 for i in range(size//36):
                     #self.normals.append((read_int8(f), read_int8(f), read_int8(f)))
                     #f.read(6)
-                    self.normals.append((read_float(f), read_float(f), read_float(f)))
-                    self.binormals.append((read_float(f), read_float(f), read_float(f)))
+                    self.normals.append(read_float_tripple(f))
+                    self.binormals.append(read_float_tripple(f))
 
-                    self.tangents.append((read_float(f), read_float(f), read_float(f)))
+                    self.tangents.append(read_float_tripple(f))
 
             else:
                 f.read(size)

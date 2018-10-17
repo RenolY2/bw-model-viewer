@@ -70,7 +70,7 @@ void main (void)
     //finalColor = texture(tex, fragTexCoord);
     vec4 color = texture(tex, fragTexCoord);
     
-    if (color.a < 0.5) {
+    if (color.a == 0.0) {
         discard;
     }
     
@@ -91,7 +91,7 @@ void main (void)
     //float angle = 1.0;
     //finalColor = color*angle;
     //vec4 lightcolor = vec4(1.0, 0.0, 0.0, 1.0);
-    clampvector(color*angle, finalColor);
+    clampvector(vec4(color.r*angle, color.g*angle, color.b*angle, color.a), finalColor);
     //finalColor = vec4(vecNormal, 0.0);
     //finalColor = texture(bump, bumpTexCoord);
 }
