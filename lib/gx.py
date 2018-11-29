@@ -78,7 +78,7 @@ class VertexDescriptor(object):
             raise RuntimeError("Unknown enum for exists: {0}", str(enumval))
 
     def from_value(self, val):
-        print("test", bin(val))
+        #print("test", bin(val))
         self.posmat = (val & 0b1) == 1
         val = val >> 1
 

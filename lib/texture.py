@@ -10,10 +10,10 @@ from .read_binary import *
 
 
 def decode_rgb565(color_val):
-    b = (color_val & 0b11111) * (256//32)
-    g = ((color_val >> 5) & 0b111111) * (256//64)
-    r = ((color_val >> 11) & 0b11111) * (256//32)
-    return r, g, b, 255
+    b = (color_val & 0b11111) * 8
+    g = ((color_val >> 5) & 0b111111) * 4
+    r = ((color_val >> 11) & 0b11111) * 8
+    return r, g, b
 
 
 def decode_rgb5a3(color_val):
@@ -58,6 +58,7 @@ pixelmask_unpack = pixelmask_format.unpack
 DXT1 = b"\x00\x00\x00\x001TXD"
 IA8 = b"\x00\x00\x00\x00\x008AI"
 P8 = b"\x00\x00\x00\x00\x00\x008P"
+RGBA = b"8B8G8R8A"
 
 class Texture(object):
     def __init__(self, name):
@@ -125,77 +126,94 @@ class Texture(object):
         if texformat == DXT1:
             assert f.read(4) == b" PIM"
             pimsize = read_uint32_le(f)
-            pic_data = f.read(pimsize)
+            #pic_data = f.read(pimsize)
 
             range_4 = range(0, 4)
             range_16 = range(0, 16)
+            read = f.read
 
-            for ii in range(0, len(pic_data) // 8, 4):
-                for ii2 in range_4:
-                    block = pic_data[(ii + ii2) * 8:(ii + ii2 + 1) * 8]
+            #for ii in range(0, len(pic_data) // 8, 4):
+            #    for ii2 in range_4:
+            #        block = pic_data[(ii + ii2) * 8:(ii + ii2 + 1) * 8]
+            for ii in range(0, pimsize // 8):
 
-                    #col0, col1 = colors_unpack(block[:4])
-                    #pixmask = pixelmask_unpack(block[4:])[0]
+                #col0, col1 = colors_unpack(block[:4])
+                #pixmask = pixelmask_unpack(block[4:])[0]
 
-                    col0, col1, pixmask = tileunpack(block)
+                col0, col1, pixmask = tileunpack(read(8))
 
-                    color0 = decode_rgb565(col0)
-                    color1 = decode_rgb565(col1)
-                    iix = (ii2 % 2) * 4
-                    iiy = (ii2 // 2) * 4
+                color0 = decode_rgb565(col0)
+                color1 = decode_rgb565(col1)
 
-                    if col0 > col1:
-                        color2_r = (2 * color0[0] + color1[0]) // 3
-                        color2_g = (2 * color0[1] + color1[1]) // 3
-                        color2_b = (2 * color0[2] + color1[2]) // 3
-                        color2_a = 255
+                ii2 = ii % 4
+                iix = (ii2 % 2) * 4
+                iiy = (ii2 // 2) * 4
 
-                        color3_r = (2 * color1[0] + color0[0]) // 3
-                        color3_g = (2 * color1[1] + color0[1]) // 3
-                        color3_b = (2 * color1[2] + color0[2]) // 3
-                        color3_a = 255
+                if col0 > col1:
+                    color2_r = (2 * color0[0] + color1[0]) // 3
+                    color2_g = (2 * color0[1] + color1[1]) // 3
+                    color2_b = (2 * color0[2] + color1[2]) // 3
+                    #color2_a = 255
+
+                    color3_r = (2 * color1[0] + color0[0]) // 3
+                    color3_g = (2 * color1[1] + color0[1]) // 3
+                    color3_b = (2 * color1[2] + color0[2]) // 3
+                    color3_a = 255
+                else:
+                    color2_r = (color0[0] + color1[0]) // 2
+                    color2_g = (color0[1] + color1[1]) // 2
+                    color2_b = (color0[2] + color1[2]) // 2
+                    #color2_a = 255
+                    color3_r = 0
+                    color3_g = 0
+                    color3_b = 0
+                    color3_a = 0
+
+                #colortable = (color0, color1,
+                #              (color2_r, color2_g, color2_b, color2_a),
+                #              (color3_r, color3_g, color3_b, color3_a))
+                for iii in range_16:
+                    iy = iii // 4
+                    ix = iii % 4
+                    index = (pixmask >> ((15 - (iy*4 + ix)) * 2)) & 0b11
+
+                    if index == 0:
+                        r, g, b = color0
+                        a = 255
+                    elif index == 1:
+                        r, g, b = color1
+                        a = 255
+                    elif index == 2:
+                        #r, g, b, a = color2_r, color2_g, color2_b, color2_a
+                        r = color2_r
+                        g = color2_g
+                        b = color2_b
+                        a = 255 #color2_a
+                    elif index == 3:
+                        #r, g, b, a = color3_r, color3_g, color3_b, color3_a
+                        r = color3_r
+                        g = color3_g
+                        b = color3_b
+                        a = color3_a
                     else:
-                        color2_r = (color0[0] + color1[0]) // 2
-                        color2_g = (color0[1] + color1[1]) // 2
-                        color2_b = (color0[2] + color1[2]) // 2
-                        color2_a = 255
-                        color3_r, color3_g, color3_b, color3_a = 0, 0, 0, 0
+                        raise RuntimeError("This shouldn't happen: Invalid index {0}".format(index))
 
-                    #colortable = (color0, color1,
-                    #              (color2_r, color2_g, color2_b, color2_a),
-                    #              (color3_r, color3_g, color3_b, color3_a))
+                    array_x = x + ix + iix
+                    array_y = y + iy + iiy
+                    #if array_x < size_x and array_y < size_y:
 
-                    for iii in range_16:
-                        iy = iii // 4
-                        ix = iii % 4
-                        index = (pixmask >> ((15 - iii) * 2)) & 0b11
+                    rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
+                    rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
+                    rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
+                    rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
+                    #else:
+                    #    print("tried to write outside of bounds:", size_x, size_y, x + ix + iix, y + iy + iiy)
 
-                        if index == 0:
-                            r, g, b, a = color0
-                        elif index == 1:
-                            r, g, b, a = color1
-                        elif index == 2:
-                            r, g, b, a = color2_r, color2_g, color2_b, color2_a
-                        elif index == 3:
-                            r, g, b, a = color3_r, color3_g, color3_b, color3_a
-                        else:
-                            raise RuntimeError("This shouldn't happen: Invalid index {0}".format(index))
-
-                        array_x = x + ix + iix
-                        array_y = y + iy + iiy
-                        if array_x < size_x and array_y < size_y:
-
-                            rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
-                            rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
-                            rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
-                            rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
-                        else:
-                            print("tried to write outside of bounds:", size_x, size_y, x + ix + iix, y + iy + iiy)
-
-                x += 8
-                if x >= size_x:
-                    x = 0
-                    y += 8
+                if ii2 == 3:
+                    x += 8
+                    if x >= size_x:
+                        x = 0
+                        y += 8
 
         elif texformat == IA8:
             assert f.read(4) == b" PIM"
@@ -263,6 +281,39 @@ class Texture(object):
                             rgbadata[(imgx + imgy * size_x) * 4 + 2] = b
                             rgbadata[(imgx + imgy * size_x) * 4 + 3] = a
 
+        elif texformat == RGBA:
+            assert f.read(4) == b" PIM"
+            pimsize = read_uint32_le(f)
+            print("size")
+
+            for i in range(pimsize//64):
+                for iy in range(4):
+                    for ix in range(4):
+                        #ix = 3 - ix
+                        #iy = 3 - iy
+                        imgx = x + ix
+                        imgy = y + iy
+
+                        a, r = read_uint8(f), read_uint8(f)
+                        rgbadata[(imgx + imgy * size_x) * 4 + 0] = r
+                        rgbadata[(imgx + imgy * size_x) * 4 + 3] = a
+
+                for iy in range(4):
+                    for ix in range(4):
+                        #ix = 3 - ix
+                        #iy = 3 - iy
+                        imgx = x + ix
+                        imgy = y + iy
+
+                        g, b = read_uint8(f), read_uint8(f)
+                        rgbadata[(imgx + imgy * size_x) * 4 + 1] = g
+                        rgbadata[(imgx + imgy * size_x) * 4 + 2] = b
+
+                x += 4
+                if x >= size_x:
+                    x = 0
+                    y += 4
+
 
         else:
             print("unknown format", texformat)
@@ -282,8 +333,7 @@ class TextureArchive(object):
     def __init__(self, archive):
         self.textures = {}
         for texture in archive.textures:
-            name = bytes(texture.res_name)
-            #print(name)
+            name = bytes(texture.res_name).lower()
             self.textures[name] = texture
 
         self._cached = {}

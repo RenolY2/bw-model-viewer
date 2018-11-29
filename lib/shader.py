@@ -17,16 +17,22 @@ out vec2 bumpTexCoord;
 
 uniform mat4 modelview;
 
+mat4 scale = mat4(
+-1.0, 0.0, 0.0, 0.0,
+0.0, 1.0, 0.0, 0.0,
+0.0, 0.0, 1.0, 0.0,
+0.0, 0.0, 0.0, 1.0);
+
 void main(void)
 {
     // Pass the tex coord straight through to the fragment shader
     fragTexCoord = texCoord;
     bumpTexCoord = bumpCoord;
     //fragmodelview = modelview;
-    
-    vecNormal = vec3(modelview*vec4(normal, 0.0));//vec3(gl_ModelViewProjectionMatrix*vec4(normal, 0.0));
-    vecBinormal = vec3(modelview*vec4(binormal, 0.0));
-    vecTangent = vec3(modelview*vec4(tangent, 0.0));
+    mat4 nrmmat = inverse(transpose(modelview));
+    vecNormal = vec3(nrmmat*vec4(normal, 0.0));//vec3(gl_ModelViewProjectionMatrix*vec4(normal, 0.0));
+    vecBinormal = vec3(nrmmat*vec4(binormal, 0.0));
+    vecTangent = vec3(nrmmat*vec4(tangent, 0.0));
     //vecNormal = normal;
     //vecBinormal = binormal;
     //vecTangent = tangent;
@@ -37,7 +43,7 @@ void main(void)
     //a.y = a.y * 0.5;
 
 
-   gl_Position = gl_ModelViewProjectionMatrix * a;
+   gl_Position = gl_ModelViewProjectionMatrix* a;
 }   
 """
 
@@ -102,6 +108,7 @@ def _compile_shader_with_error_report(shaderobj):
     glCompileShader(shaderobj)
     if not glGetShaderiv(shaderobj, GL_COMPILE_STATUS):
         raise RuntimeError(str(glGetShaderInfoLog(shaderobj), encoding="ascii"))
+
 
 def create_shader():
     #print(glGetString(GL_VENDOR))

@@ -40,7 +40,7 @@ class GenEditor(QMainWindow):
             self.configuration = make_default_config()
 
         self.pathsconfig = self.configuration["default paths"]
-        self.editorconfig = self.configuration["gen editor"]
+        #self.editorconfig = self.configuration["gen editor"]
         self.current_gen_path = None
 
         self.current_coordinates = None
@@ -90,15 +90,17 @@ class GenEditor(QMainWindow):
         self._user_made_change = False
 
         self.addobjectwindow_last_selected = None
+        self.waterbox_renderer.reset()
 
     def set_base_window_title(self, name):
         self._window_title = name
         if name != "":
-            self.setWindowTitle("Battalion Wars Model Viewer - "+name)
+            self.setWindowTitle("Battalion Wars 2 Model Viewer - "+name)
         else:
-            self.setWindowTitle("Battalion Wars Model Viewer")
+            self.setWindowTitle("Battalion Wars 2 Model Viewer")
 
     def set_has_unsaved_changes(self, hasunsavedchanges):
+        return
         if hasunsavedchanges and not self._user_made_change:
             self._user_made_change = True
 
@@ -190,14 +192,30 @@ class GenEditor(QMainWindow):
 
 
         # Misc
-        self.misc_menu = QMenu(self.menubar)
-        self.misc_menu.setTitle("Misc")
+        self.model_menu = QMenu(self.menubar)
+        self.model_menu.setTitle("Model")
+        self.export_model_obj_action = QAction("Export OBJ", self)
+        self.export_model_obj_action.triggered.connect(self.export_model_obj)
+        self.model_menu.addAction(self.export_model_obj_action)
 
 
         self.menubar.addAction(self.file_menu.menuAction())
+        self.menubar.addAction(self.model_menu.menuAction())
         #self.menubar.addAction(self.collision_menu.menuAction())
         #self.menubar.addAction(self.misc_menu.menuAction())
         self.setMenuBar(self.menubar)
+
+    @catch_exception
+    def export_model_obj(self, bool):
+        filepath = QFileDialog.getExistingDirectory(
+            self, "Open Directory",
+            self.pathsconfig["exportedModels"])
+
+        if filepath:
+            if self.waterbox_renderer.main_model is not None:
+                self.waterbox_renderer.main_model.export_obj(filepath, self.waterbox_renderer.texarchive)
+                self.pathsconfig["exportedModels"] = filepath
+                save_cfg(self.configuration)
 
     def setup_ui_toolbar(self):
         # self.toolbar = QtWidgets.QToolBar("Test", self)
@@ -255,7 +273,7 @@ class GenEditor(QMainWindow):
     def button_load_level(self):
         filepath, choosentype = QFileDialog.getOpenFileName(
             self, "Open File",
-            self.pathsconfig["gen"],
+            self.pathsconfig["resourceFiles"],
             "Resource Files (*.res;*.res.gz);;All files (*)")
 
         if filepath:
@@ -282,7 +300,7 @@ class GenEditor(QMainWindow):
                     # self.bw_map_screen.update()
                     # path_parts = path.split(filepath)
                     self.set_base_window_title(filepath)
-                    self.pathsconfig["gen"] = filepath
+                    self.pathsconfig["resourceFiles"] = filepath
                     save_cfg(self.configuration)
                     self.current_gen_path = filepath
 
@@ -319,6 +337,10 @@ class GenEditor(QMainWindow):
             self.waterbox_renderer.MOVE_UP = 1
         elif event.key() == Qt.Key_E:
             self.waterbox_renderer.MOVE_DOWN = 1
+        elif event.key() == Qt.Key_R:
+            self.waterbox_renderer.ROTATE_LEFT = 1
+        elif event.key() == Qt.Key_T:
+            self.waterbox_renderer.ROTATE_RIGHT = 1
 
         #if event.key() == Qt.Key_Plus:
         #    self.pikmin_gen_view.zoom_in()
@@ -343,6 +365,10 @@ class GenEditor(QMainWindow):
             self.waterbox_renderer.MOVE_UP = 0
         elif event.key() == Qt.Key_E:
             self.waterbox_renderer.MOVE_DOWN = 0
+        elif event.key() == Qt.Key_R:
+            self.waterbox_renderer.ROTATE_LEFT = 0
+        elif event.key() == Qt.Key_T:
+            self.waterbox_renderer.ROTATE_RIGHT = 0
 
 
     @catch_exception
@@ -424,15 +450,18 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     if platform.system() == "Windows":
         import ctypes
-        myappid = 'P2GeneratorsEditor'  # arbitrary string
+        myappid = 'BW2ModelViewer'  # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
     with open("log.txt", "w") as f:
-        #sys.stdout = f
-        #sys.stderr = f
+        f.write("")
+
+    with open("log.txt", "a") as f:
+        sys.stdout = f
+        sys.stderr = f
         print("Python version: ", sys.version)
         pikmin_gui = GenEditor()
-        pikmin_gui.setWindowIcon(QtGui.QIcon('resources/icon.ico'))
+        #pikmin_gui.setWindowIcon(QtGui.QIcon('resources/icon.ico'))
         pikmin_gui.show()
         err_code = app.exec()
 

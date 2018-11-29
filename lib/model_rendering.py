@@ -1,34 +1,14 @@
+import os
+
 from OpenGL.GL import *
 from binascii import hexlify
 from struct import unpack
 from .vectors import Vector3, Matrix4x4
 from .read_binary import *
 from .gx import VertexDescriptor, VTX, VTXFMT
+from math import floor, ceil
 
-vertexshader = [
-"#version 330 core",
-"layout (location = 0) in vec3 aPos; // the position variable has attribute position 0",
-  
-"out vec4 vertexColor; // specify a color output to the fragment shader",
-
-"void main()",
-"{",
-"    gl_Position = vec4(aPos, 1.0); // see how we directly give a vec3 to vec4's constructor",
-"    vertexColor = vec4(aPos.r, aPos.g, aPos.b, 1.0); // set the output variable to a dark-red color",
-"}"
-]
-
-frag = [
-#version 330 core
-"out vec4 FragColor;",
-  
-"in vec4 vertexColor; // the input variable from the vertex shader (same name and same type) " ,
-
-"void main()",
-"{",
-"    FragColor = vertexColor;",
-"}"
-]
+from timeit import default_timer as timer
 
 class Material(object):
     def __init__(self):
@@ -39,11 +19,11 @@ class Material(object):
         self.data = None
 
     def from_file(self, f):
-        self.tex1 = f.read(0x20) #.strip(b"\x00")
-        self.tex2 = f.read(0x20) #.strip(b"\x00")
-        self.tex3 = f.read(0x20) #.strip(b"\x00")
-        self.tex4 = f.read(0x20) #.strip(b"\x00")
-        self.data = f.read(0x24) # rest
+        self.tex1 = f.read(0x20).lower()  #.strip(b"\x00")
+        self.tex2 = f.read(0x20).lower()  #.strip(b"\x00")
+        self.tex3 = f.read(0x20).lower()  #.strip(b"\x00")
+        self.tex4 = f.read(0x20).lower()  #.strip(b"\x00")
+        self.data = f.read(0x24)  # rest
 
         if self.tex1.count(b"\x00") == 32:
             self.tex1 = None
@@ -87,7 +67,7 @@ class BWModel(Model):
         self.unkint = None
         self.floattuple = None
 
-        self.bgfname = "Model.bgf"
+        self.bgfname = b"Model.bgf"
 
         self.nodes = []
 
@@ -130,8 +110,9 @@ class BWModel(Model):
         assert f.tell() == start+cnctsize
         self.render_order = []
         for node in self.nodes:
+            start = timer()
             node.create_displaylists()
-
+            print("node", node.name, "took", timer() - start, "s")
             self.render_order.append(node )
 
     def _skip_section(self, f, secname):
@@ -161,10 +142,174 @@ class BWModel(Model):
 
             if (j > 0 and j != i):
                 continue
+            if j > 0:
+                print("current node:", node.name)
+                print("transform:", node.transform.floats)
             node.render(texturearchive, shader)
             #print("Rendering first:", node.name, node.world_center.x, node.world_center.y, node.world_center.z)
             #break
             #node.transform.reset_transform()
+
+    def export_obj(self, outputpath, texturearchive):
+        modelname = str(self.bgfname.strip(b"\00"), encoding="ascii")
+        objpath = os.path.join(outputpath, modelname+".obj")
+        matpath = os.path.join(outputpath, modelname+".mtl")
+
+        exported_textures = []
+        for node in self.nodes:
+            for material in node.materials:
+                for texturename in material.textures():
+                    if texturename not in exported_textures:
+                        exported_textures.append(texturename)
+
+        for texturename in exported_textures:
+            texname = str(texturename.strip(b"\x00"), encoding="ascii") + ".png"
+            result = texturearchive.get_texture(texturename.lower())
+            if result is not None:
+                tex, texid = result
+                tex.dump_to_file(os.path.join(outputpath, texname))
+
+        normal_offset = 1
+        texcoord_offset = 1
+        vertex_offset = 1
+
+        obj = open(objpath, "w")
+        mtl = open(matpath, "w")
+        obj.write("mtllib {0}\n".format(modelname+".mtl"))
+        try:
+            for node in self.nodes:
+                if node.do_skip():
+                    continue
+                #mvmat = Matrix4x4(*node._mvmat[0], *node._mvmat[1], *node._mvmat[2], *node._mvmat[3])
+                #mvmat.transpose()
+                mvmat = Matrix4x4.identity()
+                mvmat.a1 = 1.0
+                #normals_mvmat = Matrix4x4.identity()
+
+                currnode = node
+                mvmat.inplace_multiply_mat4(node.transform.matrix4)
+                while currnode.parent is not None:
+                    currnode = currnode.parent
+                    mvmat.inplace_multiply_mat4(currnode.transform.matrix4)
+                    #normals_mvmat.inplace_multiply_mat4(currnode.transform.matrix4)
+
+                #print(mvmat)
+
+                for x, y, z in node.vertices:
+                    newx, newy, newz, _ = mvmat.multiply_vec4(x*node.vscl, y*node.vscl, z*node.vscl, 1)
+                    obj.write("v {0} {1} {2}\n".format(-newx, newy, newz))
+
+                #for x, y, z in node.normals:
+                #    newx, newy, newz, _ = mvmat.multiply_vec4(x, y, z, 0)
+                #    obj.write("vn {0} {1} {2}\n".format(newx, newy, newz))
+
+                for u, v in node.uvmaps[0]:
+                    obj.write("vt {0} {1}\n".format(u, 1-v))
+
+                for i, mat in enumerate(node.materials):
+                    matname = str(node.name.strip(b"\00"), encoding="ascii")+"_mat{0}".format(i)
+                    mtl.write("newmtl {0}\n".format(matname))
+                    texturename = mat.tex1
+                    mtl.write("map_kd {0}\n".format(str(texturename.strip(b"\x00"), encoding="ascii") + ".png"))
+
+            for node in self.nodes:
+                if node.do_skip():
+                    continue
+                materials = []
+                obj.write("o {0}\n".format(str(node.name.strip(b"\00"), encoding="ascii")))
+                for i, mat in enumerate(node.materials):
+                    matname = str(node.name.strip(b"\00"), encoding="ascii")+"_mat{0}".format(i)
+                    materials.append((matname, mat))
+
+                for matindex, mesh in node.meshes:
+                    matname, mat = materials[matindex]
+                    obj.write("usemtl {0}\n".format(matname))
+
+                    for prim in mesh:
+                        if prim.type == 0x98:
+                            pass
+                        #elif prim.type == 0x90:
+                        #    glBegin(GL_TRIANGLES)
+                        else:
+                            raise RuntimeError("woops triangle list")
+                        i = 0
+                        vert1, vert2, vert3 = None, None, None
+
+                        for vertex in prim.vertices:
+                            if vert1 is None:
+                                vert1 = vertex
+                                continue
+                            elif vert2 is None:
+                                vert2 = vertex
+                                continue
+                            elif vert3 is None:
+                                vert3 = vertex
+                            else:
+                                vert1 = vert2
+                                vert2 = vert3
+                                vert3 = vertex
+                                i = (i + 1) % 2
+
+                            if i == 0:
+                                v1 = vert1
+                                v2 = vert2
+                                v3 = vert3
+                            else:
+                                v1 = vert2
+                                v2 = vert1
+                                v3 = vert3
+
+                            obj.write("f ")
+
+                            for v in (v3, v2, v1):
+                                posindex, normindex = v[0], v[1]
+                                tex0 = v[2]
+                                tex1 = v[3]
+                                posindex += vertex_offset
+                                hasNormals = False
+                                hasTexcoords = False
+                                obj.write("{0}".format(posindex))
+
+                                if not tex1 is None:
+                                    hasTexcoords = True
+                                    # print(tex1, self.uvmaps[0])
+                                    if not tex0 is None:
+                                        texcoordindex = tex0 << 8 | tex1
+                                    else:
+                                        texcoordindex = tex1
+                                    texcoordindex += texcoord_offset
+                                    #u, v = uvmap_0[texcoordindex]
+
+                                    #glVertexAttrib2f(2, u, v)
+                                    #glVertexAttrib2f(4, u, v)
+                                    obj.write("/{0}".format(texcoordindex))
+
+                                #if normindex is not None:
+                                #    if not hasTexcoords:
+                                #        obj.write("/")
+                                #    normindex += normal_offset
+                                #    obj.write("/{0}".format(normindex))
+
+                                obj.write(" ")
+                            obj.write("\n")
+
+                vertex_offset += len(node.vertices)
+                normal_offset += len(node.normals)
+                texcoord_offset += len(node.uvmaps[0])
+
+        except Exception as e:
+            obj.close()
+            mtl.close()
+            raise e
+
+        obj.close()
+        mtl.close()
+
+
+
+
+
+
 
 
 class LODLevel(object):
@@ -249,11 +394,13 @@ class Node(object):
         self.additionaldata = []
         for i in range(self.additionaldatacount):
             self.additionaldata.append(read_uint32(f))
-
+        start = f.tell()
+        
         assert read_id(f) == b"BBOX"
-        f.read(4)
-
+        assert read_uint32_le(f) == 4*6
+        ppos = f.tell()
         x1, y1, z1, x2, y2, z2 = unpack("ffffff", f.read(4*6))
+
         self.bbox = Box((x1, y1, z1), (x2, y2, z2))
 
         self.world_center.x = (x1 + x2) / 2.0
@@ -261,8 +408,9 @@ class Node(object):
         self.world_center.z = (z1 + z2) / 2.0
 
         secname = read_id(f)
+        
         size = read_uint32_le(f)
-
+        
         while secname != b"MATL":
             if secname == b"RNOD":
                 self.rnod = f.read(size)
@@ -306,7 +454,9 @@ class Node(object):
 
                 for i in range(size // 4):
                     scale = 2.0**11
-                    u, v = read_int16(f)/(scale), read_int16(f)/(scale)
+                    u_int = read_int16(f)
+                    v_int = read_int16(f)
+                    u, v = (u_int)/(scale), (v_int)/(scale)
                     self.uvmaps[uvindex].append((u, v))
 
             elif secname == b"XBS2":
@@ -409,12 +559,12 @@ class Node(object):
 
                 for i in range(size//6):
                     #self.vertices.append((read_float_le(f), read_float_le(f), read_float_le(f)))
-                    self.vertices.append((read_int16(f), read_int16(f), read_int16(f)))
+                    self.vertices.append(read_int16_tripple(f))
 
             elif secname == b"VNRM":
                 assert size%3 == 0
                 for i in range(size//3):
-                    self.normals.append((read_int8(f), read_int8(f), read_int8(f)))
+                    self.normals.append(read_int8_tripple(f))
 
             elif secname == b"VNBT":
                 assert size%3 == 0
@@ -454,6 +604,7 @@ class Node(object):
         #for material, displist in zip(self.materials, self._displaylists):
         if self._mvmat is None:
             self.transform.backup_transform()
+
             currnode = self
             j = 0
             while currnode is not None:
@@ -462,6 +613,7 @@ class Node(object):
                 currnode = currnode.parent
                 if j > 200:
                     raise RuntimeError("Possibly endless loop detected!")
+
             self._mvmat = glGetFloatv(GL_MODELVIEW_MATRIX)
             self.transform.reset_transform()
 
@@ -500,6 +652,7 @@ class Node(object):
 
             glCallList(displist)
 
+
     #def setup_world_center(self):
     def create_displaylists(self):
         if len(self._displaylists) > 0:
@@ -516,6 +669,7 @@ class Node(object):
             self.transform.backup_transform()
             box = self.bbox
             currnode = self
+            glScalef(-1, 1, 1)
             j = 0
             while currnode is not None:
                 j += 1
@@ -544,6 +698,10 @@ class Node(object):
             glVertex3f(10, 0, 0+i*10)
             glEnd()"""
 
+            vertices = self.vertices
+            uvmap_0 = self.uvmaps[0]
+            normals, binormals, tangents = self.normals, self.binormals, self.tangents
+            scale = self.vscl
             for prim in mesh:
                 if prim.type == 0x98:
                     glBegin(GL_TRIANGLE_STRIP)
@@ -558,7 +716,7 @@ class Node(object):
                     posindex, normindex = vertex[0], vertex[1]
                     tex0 = vertex[2]
                     tex1 = vertex[3]
-                    x,y,z = self.vertices[posindex]
+                    x,y,z = vertices[posindex]
 
                     if not tex1 is None:
                         #print(tex1, self.uvmaps[0])
@@ -566,17 +724,17 @@ class Node(object):
                             texcoordindex = tex0 << 8 | tex1
                         else:
                             texcoordindex = tex1
-                        u,v = self.uvmaps[0][texcoordindex]
+                        u,v = uvmap_0[texcoordindex]
 
                         glVertexAttrib2f(2, u, v)
                         glVertexAttrib2f(4, u, v)
 
                     if normindex is not None:
-                        glVertexAttrib3f(3, *self.normals[normindex])
-                        if len(self.binormals) > 0:
-                            glVertexAttrib3f(5, *self.binormals[normindex])
-                            glVertexAttrib3f(6, *self.tangents[normindex])
-                    glVertex3f(x * self.vscl, y * self.vscl, z * self.vscl)
+                        glVertexAttrib3f(3, *normals[normindex])
+                        if len(binormals) > 0:
+                            glVertexAttrib3f(5, *binormals[normindex])
+                            glVertexAttrib3f(6, *tangents[normindex])
+                    glVertex3f(x * scale, y * scale, z * scale)
 
                 glEnd()
             self.transform.reset_transform()
@@ -588,10 +746,71 @@ class Transform(object):
     def __init__(self, floats):
         self.floats = floats
         x,y,z,w = floats[3:7]
-        self.matrix = [w**2+x**2-y**2-z**2,     2*x*y+2*w*z,            2*x*z-2*w*y,            0.0,
-                       2*x*y-2*w*z,             y**2+w**2-x**2-z**2,    2*y*z+2*w*x,            0.0,
-                       2*x*z+2*w*y,             2*y*z-2*w*x,            z**2+w**2-x**2-y**2,    0.0,
-                       floats[0],               floats[1],              floats[2],              1.0]
+
+        #self.matrix = [w**2+x**2-y**2-z**2,     2*x*y+2*w*z,            2*x*z-2*w*y,            0.0,
+        #               2*x*y-2*w*z,             y**2+w**2-x**2-z**2,    2*y*z+2*w*x,            0.0,
+        #               2*x*z+2*w*y,             2*y*z-2*w*x,            z**2+w**2-x**2-y**2,    0.0,
+        #               floats[0],               floats[1],              floats[2],              1.0]
+        #c, b, d, a = floats[3:7]
+        #d, c, b, a = floats[3:7]
+        a, b, c, d = floats[3:7]
+        a, d, c, b = floats[3:7]
+        a, c, b, d = floats[3:7]
+        a, d, b, c = floats[3:7]
+        a, b, d, c = floats[3:7]
+        a, c, d, b = floats[3:7]
+
+        b, a, c, d = floats[3:7]
+        b, a, d, c = floats[3:7]
+        b, d, a, c = floats[3:7]
+        b, d, c, a = floats[3:7]
+        b, c, a, d = floats[3:7]
+        b, c, d, a = floats[3:7]
+
+        c, b, a, d = floats[3:7]
+        c, b, d, a = floats[3:7]
+        c, d, a, b = floats[3:7]
+        c, d, b, a = floats[3:7]
+        c, a, d, b = floats[3:7]
+        c, a, b, d = floats[3:7]
+
+        d, a, b, c = floats[3:7]
+        d, a, c, b = floats[3:7]
+        d, b, a, c = floats[3:7]
+        d, b, c, a = floats[3:7]
+        d, c, a, b = floats[3:7]
+        d, c, b, a = floats[3:7]
+
+        #self.matrix = [a**2+b**2-c**2-d**2,     2*b*c+2*a*d,            2*x*z-2*w*y,            0.0,
+        #               2*b*c-2*a*d,             a**2-b**2+c**2-d**2,    2*c*d-2*a*b,            0.0,
+        #               2*b*d-2*a*c,             2*c*d+2*a*b,            a**2-b**2-c**2+d**2,    0.0,
+        #               floats[0],               floats[1],              floats[2],              1.0]
+        """self.matrix = [a**2+b**2-c**2-d**2,     2*b*c+2*a*d,            2*b*d-2*a*c,            0.0,
+                       2*b*c-2*a*d,             a**2-b**2+c**2-d**2,    2*c*d+2*a*b,            0.0,
+                       2*b*d+2*a*c,             2*c*d-2*a*b,            a**2-b**2-c**2+d**2,    0.0,
+                       floats[0], floats[1], floats[2], 1.0]"""
+
+        """self.matrix = [a**2+b**2-c**2-d**2,     2*b*c-2*a*d,            2*b*d+2*a*c,            0.0,
+                       2*b*c+2*a*d,             a**2-b**2+c**2-d**2,    2*c*d-2*a*b,            0.0,
+                       2*b*d-2*a*c,             2*c*d+2*a*b,            a**2-b**2-c**2+d**2,    0.0,
+                       floats[0], floats[1], floats[2], 1.0]"""
+
+        """self.matrix = [a**2+b**2-c**2-d**2,     2*b*c+2*a*d,            2*b*d-2*a*c,            0.0,
+                       2*b*c-2*a*d,             a**2-b**2+c**2-d**2,    2*c*d+2*a*b,            0.0,
+                       2*b*d+2*a*c,             2*c*d-2*a*b,            a**2-b**2-c**2+d**2,    0.0,
+                       floats[0], floats[1], floats[2], 1.0]"""
+        x, y, z, w = d, c, b, a
+        self.matrix = [1- 2*y**2 - 2*z**2,  2*x*y+2*w*z,        2*x*z-2*w*y,        0.0,
+                       2*x*y-2*w*z,         1-2*x**2-2*z**2,    2*y*z+2*w*x,        0.0,
+                       2*x*z+2*w*y,         2*y*z-2*w*x,        1-2*x**2-2*y**2,    0.0,
+                       floats[0], floats[1], floats[2], 1.0]
+        self.matrix4 = Matrix4x4(*self.matrix)
+        self.matrix4.transpose()
+        #self.matrix2 = [a**2+b**2-c**2-d**2,     2*b*c+2*a*d,            2*b*d-2*a*c,            0.0,
+        #               2*b*c-2*a*d,             a**2-b**2+c**2-d**2,    2*c*d+2*a*b,            0.0,
+        #               2*b*d+2*a*c,             2*c*d-2*a*b,            a**2-b**2-c**2+d**2,    0.0,
+        #               0.0, 0.0, 0.0, 1.0]
+
 
     def backup_transform(self):
         glPushMatrix()
@@ -600,8 +819,8 @@ class Transform(object):
         #glPushMatrix()
         #glTranslatef(self.floats[0], self.floats[2], -self.floats[1])
         #glTranslatef(self.floats[8], self.floats[10], -self.floats[9])
-        cos_alpha = self.floats[3]
-        sin_alpha = self.floats[6]
+        #cos_alpha = self.floats[3]
+        #sin_alpha = self.floats[6]
         #glTranslatef(self.floats[0], self.floats[2], self.floats[9])
         #glTranslatef(self.floats[0], self.floats[2], self.floats[10])
         # Column major, i.e. each column comes first
@@ -609,8 +828,9 @@ class Transform(object):
                       0.0, 1.0, 0.0, self.floats[1],
                       0.0, 0.0, 1.0, self.floats[2],
                       0.0, 0.0, 0.0, 1.0])"""
-
+        #glMultMatrixf(self.matrix2)
         glMultMatrixf(self.matrix)
+
         #print(self.floats)
         """for i in (self.floats[3], self.floats[4], self.floats[5], self.floats[6], self.floats[7]):
             print(abs(i))

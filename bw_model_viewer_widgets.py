@@ -115,6 +115,8 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         self.MOVE_RIGHT = 0
         self.MOVE_UP = 0
         self.MOVE_DOWN = 0
+        self.ROTATE_RIGHT = 0
+        self.ROTATE_LEFT = 0
 
         self.offset_x = -25
         self.offset_y = -25
@@ -147,6 +149,9 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
 
         self.current_render_index = 0
 
+        self.rotation = 0
+        self._rotation_speed = 8
+
     @catch_exception
     def initializeGL(self):
         self.shader = create_shader()
@@ -159,6 +164,8 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         self.faces = []
         self.collision = []
         self.models = []
+
+        self.main_model = None
 
     @catch_exception
     def render_loop(self):
@@ -213,6 +220,13 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
             diff_height = 1*speedup*self._wasdscrolling_speed*timedelta
         elif self.MOVE_DOWN == 1:
             diff_height = -1 * speedup * self._wasdscrolling_speed * timedelta
+
+        if self.ROTATE_LEFT == 1 and self.ROTATE_RIGHT == 1:
+            pass
+        elif self.ROTATE_RIGHT == 1:
+            self.rotation += self._rotation_speed*timedelta*speedup
+        elif self.ROTATE_LEFT == 1:
+            self.rotation -= self._rotation_speed*timedelta*speedup
 
         if not forward_move.is_zero() or not sideways_move.is_zero() or diff_height != 0:
             #if self.zoom_factor > 1.0:
@@ -306,6 +320,8 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         for model in self.models:
             model.render()
 
+        glRotatef(self.rotation, 0, 1, 0)
+
         if self.main_model is None:
             return
 
@@ -326,7 +342,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
 
         currenttime = default_timer()
         lightvar = glGetUniformLocation(self.shader, "light")
-        rot = (currenttime % 9)*40
+        rot = (currenttime % 9)*40 - self.rotation
         glUniform3fv(lightvar, 1, (sin(radians(rot)), 0, cos(radians(rot))))
         self.do_redraw()
         i = 0

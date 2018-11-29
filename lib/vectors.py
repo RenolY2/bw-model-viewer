@@ -211,6 +211,13 @@ class Matrix4x4(object):
         self.c4 = val4C
         self.d4 = val4D
 
+    @classmethod
+    def identity(cls):
+        return cls(1.0, 0.0, 0.0, 0.0,
+                   0.0, 1.0, 0.0, 0.0,
+                   0.0, 0.0, 1.0, 0.0,
+                   0.0, 0.0, 0.0, 1.0)
+
     def transpose(self):
         self.__init__(self.a1, self.a2, self.a3, self.a4,
                       self.b1, self.b2, self.b3, self.b4,
@@ -225,6 +232,27 @@ class Matrix4x4(object):
         neww = self.a4 * x + self.b4 * y + self.c4 * z + self.d4 * w
         #print("MATRIX MULTIPLICATION OUTPUT", newx, newy, newz, neww)
         return newx, newy, newz, neww
+
+    def inplace_multiply_mat4(self, othermat):
+        col1 = self.multiply_vec4(othermat.a1, othermat.a2, othermat.a3, othermat.a4)
+        col2 = self.multiply_vec4(othermat.b1, othermat.b2, othermat.b3, othermat.b4)
+        col3 = self.multiply_vec4(othermat.c1, othermat.c2, othermat.c3, othermat.c4)
+        col4 = self.multiply_vec4(othermat.d1, othermat.d2, othermat.d3, othermat.d4)
+
+        self.a1, self.a2, self.a3, self.a4 = col1
+        self.b1, self.b2, self.b3, self.b4 = col2
+        self.c1, self.c2, self.c3, self.c4 = col3
+        self.d1, self.d2, self.d3, self.d4 = col4
+
+    @classmethod
+    def from_matrix(cls, matrix):
+
+        return cls(
+            matrix.a1, matrix.b1, matrix.c1, matrix.d1,
+            matrix.a2, matrix.b2, matrix.c2, matrix.d2,
+            matrix.a3, matrix.b3, matrix.c3, matrix.d3,
+            matrix.a4, matrix.b4, matrix.c4, matrix.d4
+        )
 
     def __str__(self):
         out = StringIO()
