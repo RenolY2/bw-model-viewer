@@ -16,3 +16,6 @@ Controls:
 * R, T - rotates model in-place. Hold shift to rotate faster
 
 Note for 3ds Max users: If you have trouble importing the exported obj files, try enabling the import option that says "Import as single mesh".
+
+# Download
+Check https://github.com/RenolY2/bw-model-viewer/releases for compiled releases
