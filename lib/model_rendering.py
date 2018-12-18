@@ -373,7 +373,6 @@ class Node(object):
 
     def from_file(self, f):
         nodename = f.read(4)
-        print("reading", nodename)
         assert nodename == b"EDON"
         nodesize = read_uint32_le(f)
         nodestart = f.tell()
