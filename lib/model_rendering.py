@@ -44,10 +44,24 @@ class Material(object):
         if self.tex4 is not None:
             yield self.tex4
 
-        raise StopIteration()
+        return
 
     def __str__(self):
         return str([x.strip(b"\x00") for x in self.textures()])
+
+
+class MaterialBW1(Material):
+    def from_file(self, f):
+        self.tex1 = f.read(0x10).lower()  #.strip(b"\x00")
+        self.tex2 = f.read(0x10).lower()  #.strip(b"\x00")
+        #self.tex3 = f.read(0x20).lower()  #.strip(b"\x00")
+        #self.tex4 = f.read(0x20).lower()  #.strip(b"\x00")
+        self.data = f.read(0x28)  # rest
+
+        if self.tex1.count(b"\x00") == 16:
+            self.tex1 = None
+        if self.tex2.count(b"\x00") == 16:
+            self.tex2 = None
 
 
 class Model(object):
@@ -58,7 +72,7 @@ class Model(object):
         pass
 
 
-class BWModel(Model):
+class BW2Model(Model):
     def __init__(self):
         self.version = None
         self.nodecount = None
@@ -70,6 +84,10 @@ class BWModel(Model):
         self.bgfname = b"Model.bgf"
 
         self.nodes = []
+
+    def destroy(self):
+        for node in self.nodes:
+            node.destroy_displaylists()
 
     def from_file(self, f):
         self.version = (read_uint32(f), read_uint32(f))
@@ -90,12 +108,12 @@ class BWModel(Model):
 
         self.nodes = []
         for i in range(self.nodecount):
-            node = Node(self.additionaldatacount)
+            node = NodeBW2(self.additionaldatacount)
             node.from_file(f)
             self.nodes.append(node)
 
         cntname = f.read(4)
-        print(cntname)
+        #print(cntname)
         assert cntname == b"TCNC"
         cnctsize = read_uint32_le(f)
         start = f.tell()
@@ -110,13 +128,14 @@ class BWModel(Model):
         assert f.tell() == start+cnctsize
         self.render_order = []
         for node in self.nodes:
-            start = timer()
+            #start = timer()
             node.create_displaylists()
-            print("node", node.name, "took", timer() - start, "s")
+            #print("node", node.name, "took", timer() - start, "s")
             self.render_order.append(node )
 
     def _skip_section(self, f, secname):
         name = f.read(4)
+        #print(name)
         assert name == secname
         size = read_uint32_le(f)
         f.read(size)
@@ -142,9 +161,11 @@ class BWModel(Model):
 
             if (j > 0 and j != i):
                 continue
-            if j > 0:
+
+            """if j > 0:
                 print("current node:", node.name)
                 print("transform:", node.transform.floats)
+            """
             node.render(texturearchive, shader)
             #print("Rendering first:", node.name, node.world_center.x, node.world_center.y, node.world_center.z)
             #break
@@ -306,10 +327,54 @@ class BWModel(Model):
         mtl.close()
 
 
+class BW1Model(BW2Model):
+    def from_file(self, f):
+        #self.version = (read_uint32(f), read_uint32(f))
+        self.nodecount = read_uint16_le(f)
+        self.additionaldatacount = read_uint8(f)
+        f.read(1) #padding
+        self.unkint = read_uint32(f)
+        self.floattuple = (read_float(f), read_float(f), read_float(f), read_float(f))
 
 
+        #bgfnamelength = read_uint32(f)
+        #self.bgfname = f.read(bgfnamelength)
 
+        self.additionaldata = []
+        for i in range(self.additionaldatacount):
+            self.additionaldata.append(read_uint32(f))
 
+        self._skip_section(f, b"MEMX")  # Unused
+
+        self.nodes = []
+        #print("nodecount is ", self.nodecount)
+        for i in range(self.nodecount):
+            node = NodeBW1(self.additionaldatacount)
+            node.from_file(f, i)
+            self.nodes.append(node)
+
+        cntname = f.read(4)
+        #print(cntname)
+        assert cntname == b"TCNC"
+        cnctsize = read_uint32_le(f)
+        start = f.tell()
+        #print(cnctsize, self.unkint)
+        #assert cnctsize == self.unkint*4
+
+        for i in range(cnctsize//4):
+            parent = read_uint16_le(f)
+            child = read_uint16_le(f)
+            #print("Concat:", child, parent)
+            self.nodes[child].parent = self.nodes[parent]
+
+        assert f.tell() == start+cnctsize
+        self.render_order = []
+        for node in self.nodes:
+            start = timer()
+            node.create_displaylists()
+            #print("node", node.name, "took", timer() - start, "s")
+            self.render_order.append(node )
+            #print(node._displaylists, node.meshes)
 
 
 class LODLevel(object):
@@ -325,7 +390,7 @@ class Primitive(object):
         self.vertices = []
 
 
-class Node(object):
+class NodeBW2(object):
     def __init__(self, additionaldatacount):
         self.children = []
         self.parent = None
@@ -339,7 +404,7 @@ class Node(object):
 
         self.sections = []
 
-        self.name = "NodeName"
+        self.name = b"NodeName"
 
         self.unkshort1 = None
         self.unkshort2 = None
@@ -542,7 +607,7 @@ class Node(object):
                     elif opcode == 0x00:
                         pass
                     else:
-                        print(self.name, hex(f.tell()-nodestart))
+                        #print(self.name, hex(f.tell()-nodestart))
                         raise RuntimeError("Unknown opcode: {0:x}".format(opcode))
 
                 f.seek(gx_data_end)
@@ -608,10 +673,12 @@ class Node(object):
             j = 0
             while currnode is not None:
                 j += 1
+
                 currnode.transform.apply_transform()
                 currnode = currnode.parent
                 if j > 200:
                     raise RuntimeError("Possibly endless loop detected!")
+
 
             self._mvmat = glGetFloatv(GL_MODELVIEW_MATRIX)
             self.transform.reset_transform()
@@ -636,10 +703,10 @@ class Node(object):
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,GL_REPEAT)
                     #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
                 else:
-                    print("oops case 2 disable")
+                    #print("oops case 2 disable")
                     glDisable(GL_TEXTURE_2D)
             else:
-                print("oops case 1 disable")
+                #print("oops case 1 disable")
                 glDisable(GL_TEXTURE_2D)
 
             if material.tex2 is not None:
@@ -651,6 +718,9 @@ class Node(object):
 
             glCallList(displist)
 
+    def destroy_displaylists(self):
+        for matindex, i in self._displaylists:
+            glDeleteLists(i, 1)
 
     #def setup_world_center(self):
     def create_displaylists(self):
@@ -670,13 +740,15 @@ class Node(object):
             currnode = self
             glScalef(-1, 1, 1)
             j = 0
+
             while currnode is not None:
                 j += 1
+
                 currnode.transform.apply_transform()
+
                 currnode = currnode.parent
                 if j > 200:
                     raise RuntimeError("Possibly endless loop detected!")
-
 
             #glEnable(GL_TEXTURE_2D)
             #print("node", self.name, "textures:", str(material))
@@ -741,6 +813,233 @@ class Node(object):
             self._displaylists.append((i, displist))
 
 
+class NodeBW1(NodeBW2):
+    def do_skip(self):
+        return self.xbs2count == 0 or self.unkshort1 == 151 or self.unkshort1 == 150
+
+    def from_file(self, f, i=0):
+        nodename = f.read(4)
+        #print(nodename)
+        assert nodename == b"EDON"
+        nodesize = read_uint32_le(f)
+        nodestart = f.tell()
+        nodeend = f.tell() + nodesize
+
+        #nodenamelength = read_uint32(f)
+        #self.name = f.read(nodenamelength)
+
+        headerstart = f.tell()
+        # Do stuff
+        self.unkshort1, self.unkshort2, self.unkint1, _, _, _, self.unkint2 = unpack("HHBBBBI", f.read(12))
+        self.name = bytes("Node {0}".format(i), encoding="ascii")
+        #assert self.padd == 0
+        # unkshort1, unkshort2, unkshort3, padd = unpack(">HHHH", f.read(8))
+        floats = unpack("f" * 11, f.read(4 * 11))
+        self.transform = Transform(floats)
+
+        assert f.tell() - headerstart == 0x38
+
+        self.additionaldata = []
+        for i in range(self.additionaldatacount):
+            self.additionaldata.append(read_uint32(f))
+        start = f.tell()
+
+        assert read_id(f) == b"BBOX"
+        assert read_uint32_le(f) == 4 * 6
+        ppos = f.tell()
+        x1, y1, z1, x2, y2, z2 = unpack("ffffff", f.read(4 * 6))
+
+        self.bbox = Box((x1, y1, z1), (x2, y2, z2))
+
+        self.world_center.x = (x1 + x2) / 2.0
+        self.world_center.y = (y1 + y2) / 2.0
+        self.world_center.z = (z1 + z2) / 2.0
+
+        secname = read_id(f)
+
+        size = read_uint32_le(f)
+
+        while secname != b"MATL":
+            if secname == b"RNOD":
+                self.rnod = f.read(size)
+
+            elif secname == b"VSCL":
+                assert size == 4
+                self.vscl = read_float_le(f)
+
+            else:
+                raise RuntimeError("Unknown secname {0}", secname)
+
+            secname = read_id(f)
+            size = read_uint32_le(f)
+
+        assert secname == b"MATL"
+        #print(hex(size), self.unkint1)
+        assert size % 0x48 == 0
+        #assert self.unkint1 * 0x48 == size
+
+        self.materials = []
+        for i in range(size//0x48):
+            material = MaterialBW1()
+            material.from_file(f)
+            self.materials.append(material)
+
+        vertexdesc = 0
+
+        self.uvmaps = [[], [], [], []]
+
+        while f.tell() < nodeend:
+            secname = read_id(f)
+            size = read_uint32_le(f)
+            end = f.tell() + size
+
+            if secname == b"SCNT":
+                val = read_uint32(f)
+                assert size == 4
+                self.lods.append(val)
+
+            elif secname in (b"VUV1", b"VUV2", b"VUV3", b"VUV4"):
+                uvindex = secname[3] - b"1"[0]
+
+                for i in range(size // 4):
+                    scale = 2.0 ** 11
+                    u_int = read_int16(f)
+                    v_int = read_int16(f)
+                    u, v = (u_int) / (scale), (v_int) / (scale)
+                    self.uvmaps[uvindex].append((u, v))
+
+            elif secname == b"XBST":
+                # eprint(hex(f.tell()))
+                materialindex = read_uint32(f)
+                unknown = (read_uint32(f),)
+                gx_data_size = read_uint32(f)
+                gx_data_end = f.tell() + gx_data_size
+                # print(hex(gx_data_end), hex(gx_data_size))
+
+                mesh = []
+                self.meshes.append((materialindex, mesh))
+
+                while f.tell() < gx_data_end:
+                    opcode = read_uint8(f)
+
+                    if opcode == 0x8:  # Load CP Reg
+                        command = read_uint8(f)
+                        val = read_uint32(f)
+                        if command == 0x50:
+                            vertexdesc &= ~0x1FFFF
+                            vertexdesc |= val
+                        elif command == 0x60:
+                            vertexdesc &= 0x1FFFF
+                            vertexdesc |= (val << 17)
+                        else:
+                            raise RuntimeError("unknown CP command {0:x}".format(command))
+                    elif opcode == 0x10:  # Load XF Reg
+                        x = read_uint32(f)
+                        y = read_uint32(f)
+
+                    elif opcode & 0xFA == 0x98:  # Triangle strip
+                        attribs = VertexDescriptor()
+                        attribs.from_value(vertexdesc)
+
+                        vertex_count = read_uint16(f)
+                        prim = Primitive(0x98)
+                        # print(bin(vertexdesc))
+                        # print([x for x in attribs.active_attributes()])
+
+                        for i in range(vertex_count):
+                            primattrib = [None, None,
+                                          None, None, None, None, None, None, None, None]
+
+                            for attrib, fmt in attribs.active_attributes():
+                                # matindex = read_uint8(f)
+
+                                if attrib == VTX.Position:
+                                    if fmt == VTXFMT.INDEX8:
+                                        posIndex = read_uint8(f)
+                                    elif fmt == VTXFMT.INDEX16:
+                                        posIndex = read_uint16(f)
+                                    else:
+                                        raise RuntimeError("unknown position format")
+                                    primattrib[0] = posIndex
+                                elif attrib == VTX.Normal:
+                                    if fmt == VTXFMT.INDEX8:
+                                        normIndex = read_uint8(f)
+                                    elif fmt == VTXFMT.INDEX16:
+                                        normIndex = read_uint16(f)
+                                    else:
+                                        raise RuntimeError("unknown normal format")
+                                    primattrib[1] = normIndex
+                                elif attrib is not None and VTX.Tex0Coord <= attrib <= VTX.Tex7Coord:
+                                    coordindex = attrib - VTX.Tex0Coord
+                                    val = read_uint8(f)
+                                    primattrib[2 + coordindex] = val
+                                elif fmt is not None:
+                                    if fmt == VTXFMT.INDEX8:
+                                        read_uint8(f)
+                                    elif fmt == VTXFMT.INDEX16:
+                                        read_uint16(f)
+                                    else:
+                                        RuntimeError("unknown fmt format")
+
+                                else:
+                                    read_uint8(f)
+
+                            prim.vertices.append(primattrib)
+
+                        # self.triprimitives.append(prim)
+                        mesh.append(prim)
+                    elif opcode == 0x00:
+                        pass
+                    else:
+                        #print(self.name, hex(f.tell() - nodestart))
+                        raise RuntimeError("Unknown opcode: {0:x}".format(opcode))
+
+                f.seek(gx_data_end)
+
+            elif secname == b"VPOS":
+                if len(self.vertices) > 0:
+                    f.read(size)
+                    self.sections.append(secname)
+                    break
+                # print(self.name, size)
+                assert size % 6 == 0
+                # assert size%4 == 0
+
+                for i in range(size // 6):
+                    # self.vertices.append((read_float_le(f), read_float_le(f), read_float_le(f)))
+                    self.vertices.append(read_int16_tripple(f))
+
+            elif secname == b"VNRM":
+                assert size % 3 == 0
+                for i in range(size // 3):
+                    self.normals.append(read_int8_tripple(f))
+
+            elif secname == b"VNBT":
+                assert size % 3 == 0
+                assert size % 9 == 0
+                assert size % 36 == 0
+                for i in range(size // 36):
+                    # self.normals.append((read_int8(f), read_int8(f), read_int8(f)))
+                    # f.read(6)
+                    self.normals.append(read_float_tripple(f))
+                    self.binormals.append(read_float_tripple(f))
+
+                    self.tangents.append(read_float_tripple(f))
+
+            else:
+                f.read(size)
+            self.sections.append(secname)
+        #print("skipping sections...")
+        while f.tell() < nodeend:
+            secname = read_id(f)
+            #print(secname)
+            size = read_uint32_le(f)
+            f.read(size)
+            self.sections.append(secname)
+        #print("end of node")
+        assert f.tell() == nodeend
+
+
 class Transform(object):
     def __init__(self, floats):
         self.floats = floats
@@ -803,6 +1102,17 @@ class Transform(object):
                        2*x*y-2*w*z,         1-2*x**2-2*z**2,    2*y*z+2*w*x,        0.0,
                        2*x*z+2*w*y,         2*y*z-2*w*x,        1-2*x**2-2*y**2,    0.0,
                        floats[0], floats[1], floats[2], 1.0]
+
+        self.rotmatrix = [1 - 2 * y ** 2 - 2 * z ** 2, 2 * x * y + 2 * w * z, 2 * x * z - 2 * w * y, 0.0,
+                       2 * x * y - 2 * w * z, 1 - 2 * x ** 2 - 2 * z ** 2, 2 * y * z + 2 * w * x, 0.0,
+                       2 * x * z + 2 * w * y, 2 * y * z - 2 * w * x, 1 - 2 * x ** 2 - 2 * y ** 2, 0.0,
+                       0.0, 0.0, 0.0, 1.0]
+
+        self.transmatrix = [1.0, 0.0, 0.0, 0.0,
+                       0.0, 1.0, 0.0, 0.0,
+                       0.0, 0.0, 1.0, 0.0,
+                       floats[0], floats[1], floats[2], 1.0]
+
         self.matrix4 = Matrix4x4(*self.matrix)
         self.matrix4.transpose()
         #self.matrix2 = [a**2+b**2-c**2-d**2,     2*b*c+2*a*d,            2*b*d-2*a*c,            0.0,
@@ -815,6 +1125,9 @@ class Transform(object):
         glPushMatrix()
 
     def apply_transform(self):
+        glMultMatrixf(self.matrix)
+
+    def apply_translation(self):
         #glPushMatrix()
         #glTranslatef(self.floats[0], self.floats[2], -self.floats[1])
         #glTranslatef(self.floats[8], self.floats[10], -self.floats[9])
@@ -828,8 +1141,11 @@ class Transform(object):
                       0.0, 0.0, 1.0, self.floats[2],
                       0.0, 0.0, 0.0, 1.0])"""
         #glMultMatrixf(self.matrix2)
-        glMultMatrixf(self.matrix)
+        #glMultMatrixf(self.matrix)
+        glMultMatrixf(self.transmatrix)
 
+    def apply_rotation(self):
+        glMultMatrixf(self.rotmatrix)
         #print(self.floats)
         """for i in (self.floats[3], self.floats[4], self.floats[5], self.floats[6], self.floats[7]):
             print(abs(i))

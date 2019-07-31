@@ -10,8 +10,8 @@ from OpenGL.GLU import *
 from lib.vectors import Vector3, Plane, Triangle, Line
 from custom_widgets import catch_exception
 from lib.read_binary import *
-from lib.model_rendering import Box, Transform, Node, BWModel
-from lib.shader import create_shader
+from lib.model_rendering import Box, Transform, BW2Model, BW1Model
+from lib.shader import create_shader, create_shaderSimple
 
 
 def catch_exception_with_dialog(func):
@@ -93,6 +93,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
     camera_moved = QtCore.pyqtSignal(float, float, float)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.isbw1 = False
 
         self.verts = []
         self.faces = []
@@ -155,6 +156,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
     @catch_exception
     def initializeGL(self):
         self.shader = create_shader()
+        self.shaderSimple = create_shaderSimple()
 
         print(self.shader)
         #self.shadershader.setUniform("firstSampler", 0);
@@ -164,7 +166,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         self.faces = []
         self.collision = []
         self.models = []
-
+        del self.main_model
         self.main_model = None
 
     @catch_exception
@@ -244,13 +246,22 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
     def add_waterbox(self, waterbox):
         self.models.append(waterbox)
 
-    def create_drawlist(self, bwmodel):
+    def create_drawlist(self, bwmodel, isbw1):
+        self.isbw1 = isbw1
         data = bwmodel.entries[0]
         data.fileobj.seek(0)
         f = data.fileobj
 
-        model = BWModel()
+        if isbw1:
+            #print("Model is BW1")
+            model = BW1Model()
+            model.bgfname = bytes(bwmodel.res_name)
+        else:
+            #print("Model is BW2")
+            model = BW2Model()
 
+        if self.main_model is not None:
+            self.main_model.destroy()
         model.from_file(f)
         self.main_model = model
 
@@ -333,12 +344,15 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         #glCallList(self.main_model)
         #self.main_model.sort_render_order(self.camera_direction.x, self.camera_direction.y, self.camera_direction.z)
         #self.main_model.sort_render_order(self.offset_x, self.camera_height, -self.offset_y)
-        glUseProgram(self.shader)
-        texvar = glGetUniformLocation(self.shader, "tex")
-        #print(texvar, self.shader, type(self.shader))
-        glUniform1i(texvar, 0)
-        bumpvar = glGetUniformLocation(self.shader, "bump")
-        glUniform1i(bumpvar, 1)
+        if not self.isbw1:
+            glUseProgram(self.shader)
+            texvar = glGetUniformLocation(self.shader, "tex")
+            #print(texvar, self.shader, type(self.shader))
+            glUniform1i(texvar, 0)
+            bumpvar = glGetUniformLocation(self.shader, "bump")
+            glUniform1i(bumpvar, 1)
+        else:
+            glUseProgram(self.shaderSimple)
 
         currenttime = default_timer()
         lightvar = glGetUniformLocation(self.shader, "light")
@@ -353,8 +367,11 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
             i += 1
         if self.current_render_index > i:
             self.current_render_index = 0
+        if not self.isbw1:
+            self.main_model.render(self.texarchive, self.shader, self.current_render_index)
+        else:
+            self.main_model.render(self.texarchive, self.shaderSimple, self.current_render_index)
 
-        self.main_model.render(self.texarchive, self.shader, self.current_render_index)
         glUseProgram(0)
         glFinish()
 

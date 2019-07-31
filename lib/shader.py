@@ -103,6 +103,58 @@ void main (void)
 }
 """
 
+fragshaderSimple = """
+#version 330
+in vec2 fragTexCoord; //this is the texture coord
+in vec3 vecNormal; // normal vector
+in vec3 vecBinormal;
+in vec3 vecTangent;
+in vec2 bumpTexCoord; // coordinates on bump texture
+
+out vec4 finalColor; //this is the output color of the pixel
+uniform sampler2D tex;
+uniform sampler2D bump;
+
+uniform vec3 light;// = vec3(0.0, 1.0, 0.0);
+vec4 ambient = vec4(0.1, 0.1, 0.1, 1.0);
+
+void clampvector(in vec4 vector, out vec4 result) {
+    result.x = clamp(vector.x, 0.0, 1.0);
+    result.y = clamp(vector.y, 0.0, 1.0);
+    result.z = clamp(vector.z, 0.0, 1.0);
+    result.w = clamp(vector.w, 0.0, 1.0);
+}
+
+void main (void)
+{
+    //finalColor = vec4(1.0, 1.0, 0.0, 1.0);
+    //vec4 color = vec4(fragTexCoord, 1.0, 1.0);
+    //finalColor = texture(tex, fragTexCoord);
+    vec4 color = texture(tex, fragTexCoord);
+    //vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+    if (color.a == 0.0) {
+        discard;
+    }
+
+    vec3 finalVecNormal = vecNormal;
+    finalVecNormal = normalize(finalVecNormal);
+    vec3 normlight = normalize(light);
+
+    //float angle = dot(light, vecNormal) * inversesqrt(length(light)) * inversesqrt(length(vecNormal));
+    float angle = dot(normlight, finalVecNormal);
+    if (length(vecNormal) == 0.0) {
+        angle = -1.0;
+    }
+    angle = clamp((-1*angle+1)/2.0, 0.2, 1.0);
+    //float angle = 1.0;
+    //finalColor = color*angle;
+    //vec4 lightcolor = vec4(1.0, 0.0, 0.0, 1.0);
+    clampvector(vec4(color.r*angle, color.g*angle, color.b*angle, color.a), finalColor);
+    //finalColor = vec4(vecNormal, 0.0);
+    //finalColor = texture(bump, bumpTexCoord);
+}
+"""
+
 
 def _compile_shader_with_error_report(shaderobj):
     glCompileShader(shaderobj)
@@ -122,6 +174,28 @@ def create_shader():
     _compile_shader_with_error_report(vertexShaderObject)
     _compile_shader_with_error_report(fragmentShaderObject)
     
+    program = glCreateProgram()
+
+    glAttachShader(program, vertexShaderObject)
+    glAttachShader(program, fragmentShaderObject)
+
+    glLinkProgram(program)
+
+    return program
+
+
+def create_shaderSimple():
+    # print(glGetString(GL_VENDOR))
+    vertexShaderObject = glCreateShader(GL_VERTEX_SHADER)
+    fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER)
+    # glShaderSource(vertexShaderObject, 1, vertshader, len(vertshader))
+    # glShaderSource(fragmentShaderObject, 1, fragshader, len(fragshader))
+    glShaderSource(vertexShaderObject, vertshader)
+    glShaderSource(fragmentShaderObject, fragshaderSimple)
+
+    _compile_shader_with_error_report(vertexShaderObject)
+    _compile_shader_with_error_report(fragmentShaderObject)
+
     program = glCreateProgram()
 
     glAttachShader(program, vertexShaderObject)

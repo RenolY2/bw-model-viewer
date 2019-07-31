@@ -1,5 +1,6 @@
 import traceback
 import gzip
+import os
 from timeit import default_timer
 
 import PyQt5.QtWidgets as QtWidgets
@@ -48,7 +49,6 @@ class GenEditor(QMainWindow):
         self.add_object_window = None
         self.object_to_be_added = None
 
-        self.history = EditorHistory(20)
         self.edit_spawn_window = None
 
         self._window_title = ""
@@ -61,59 +61,35 @@ class GenEditor(QMainWindow):
 
     @catch_exception
     def reset(self):
-        self.history.reset()
         self.object_to_be_added = None
         self.model_list.clear()
         self.res_file = None
-        #self.pikmin_gen_view.reset(keep_collision=True)
-
         self.current_coordinates = None
-
-        #for key, val in self.editing_windows.items():
-        #    val.destroy()
 
         self.editing_windows = {}
 
-        #if self.add_object_window is not None:
-        #    self.add_object_window.destroy()
-        #    self.add_object_window = None
-
-        #if self.edit_spawn_window is not None:
-        #    self.edit_spawn_window.destroy()
-        #    self.edit_spawn_window = None
-
         self.current_gen_path = None
-        #self.pik_control.reset_info()
-        #self.pik_control.button_add_object.setChecked(False)
-        #self.pik_control.button_move_object.setChecked(False)
         self._window_title = ""
         self._user_made_change = False
 
         self.addobjectwindow_last_selected = None
         self.waterbox_renderer.reset()
+        if self.texture_archive is not None:
+            self.texture_archive.reset()
+
+        if self.res_file is not None:
+            del self.res_file
+            self.res_file = None
 
     def set_base_window_title(self, name):
         self._window_title = name
         if name != "":
-            self.setWindowTitle("Battalion Wars 2 Model Viewer - "+name)
+            self.setWindowTitle("Battalion Wars Model Viewer - "+name)
         else:
-            self.setWindowTitle("Battalion Wars 2 Model Viewer")
+            self.setWindowTitle("Battalion Wars Model Viewer")
 
     def set_has_unsaved_changes(self, hasunsavedchanges):
         return
-        if hasunsavedchanges and not self._user_made_change:
-            self._user_made_change = True
-
-            if self._window_title != "":
-                self.setWindowTitle("Pikmin 2 Generators Editor [Unsaved Changes] - " + self._window_title)
-            else:
-                self.setWindowTitle("Pikmin 2 Generators Editor [Unsaved Changes] ")
-        elif not hasunsavedchanges and self._user_made_change:
-            self._user_made_change = False
-            if self._window_title != "":
-                self.setWindowTitle("Pikmin 2 Generators Editor - " + self._window_title)
-            else:
-                self.setWindowTitle("Pikmin 2 Generators Editor")
 
     def setup_ui(self):
         self.resize(1000, 800)
@@ -141,13 +117,6 @@ class GenEditor(QMainWindow):
         self.horizontalLayout.addItem(spacerItem)
         self.horizontalLayout.addWidget(self.model_list)
 
-        #self.pik_control = PikminSideWidget(self)
-        #self.horizontalLayout.addWidget(self.pik_control)
-
-        #QtWidgets.QShortcut(Qt.CTRL + Qt.Key_E, self).activated.connect(self.action_open_editwindow)
-        #QtWidgets.QShortcut(Qt.Key_M, self).activated.connect(self.shortcut_move_objects)
-        #QtWidgets.QShortcut(Qt.Key_G, self).activated.connect(self.action_ground_objects)
-        #QtWidgets.QShortcut(Qt.CTRL + Qt.Key_A, self).activated.connect(self.shortcut_open_add_item_window)
         self.statusbar = QStatusBar(self)
         self.statusbar.setObjectName("statusbar")
         self.setStatusBar(self.statusbar)
@@ -159,11 +128,6 @@ class GenEditor(QMainWindow):
         self.file_menu = QMenu(self)
         self.file_menu.setTitle("File")
 
-        #save_file_shortcut = QtWidgets.QShortcut(Qt.CTRL + Qt.Key_S, self.file_menu)
-        #save_file_shortcut.activated.connect(self.button_save_level)
-        #QtWidgets.QShortcut(Qt.CTRL + Qt.Key_O, self.file_menu).activated.connect(self.button_load_level)
-        #QtWidgets.QShortcut(Qt.CTRL + Qt.Key_Alt + Qt.Key_S, self.file_menu).activated.connect(self.button_save_level_as)
-
         self.file_load_action = QAction("Load", self)
         self.save_file_action = QAction("Save", self)
         self.save_file_as_action = QAction("Save As", self)
@@ -172,32 +136,20 @@ class GenEditor(QMainWindow):
         #self.save_file_as_action.setShortcut("Ctrl+Alt+S")
 
         self.file_load_action.triggered.connect(self.button_load_level)
-        #self.save_file_action.triggered.connect(self.button_save_level)
-        #self.save_file_as_action.triggered.connect(self.button_save_level_as)
 
         self.file_menu.addAction(self.file_load_action)
-        #self.file_menu.addAction(self.save_file_action)
-        #self.file_menu.addAction(self.save_file_as_action)
-
-
-        # ------ Collision Menu
-        """self.collision_menu = QMenu(self.menubar)
-        self.collision_menu.setTitle("Geometry")
-        self.collision_load_action = QAction("Load .OBJ", self)
-        self.collision_load_action.triggered.connect(self.button_load_collision)
-        self.collision_menu.addAction(self.collision_load_action)
-        self.collision_load_grid_action = QAction("Load GRID.BIN", self)
-        self.collision_load_grid_action.triggered.connect(self.button_load_collision_grid)
-        self.collision_menu.addAction(self.collision_load_grid_action)"""
 
 
         # Misc
         self.model_menu = QMenu(self.menubar)
         self.model_menu.setTitle("Model")
-        self.export_model_obj_action = QAction("Export OBJ", self)
+        self.export_model_obj_action = QAction("Export current as OBJ", self)
         self.export_model_obj_action.triggered.connect(self.export_model_obj)
         self.model_menu.addAction(self.export_model_obj_action)
 
+        self.export_model_obj_batch_action = QAction("Export All as OBJ", self)
+        self.export_model_obj_batch_action.triggered.connect(self.export_model_obj_batch)
+        self.model_menu.addAction(self.export_model_obj_batch_action)
 
         self.menubar.addAction(self.file_menu.menuAction())
         self.menubar.addAction(self.model_menu.menuAction())
@@ -217,57 +169,44 @@ class GenEditor(QMainWindow):
                 self.pathsconfig["exportedModels"] = filepath
                 save_cfg(self.configuration)
 
+    @catch_exception_with_dialog
+    def export_model_obj_batch(self, bool):
+        filepath = QFileDialog.getExistingDirectory(
+            self, "Open Directory",
+            self.pathsconfig["exportedModels"])
+
+        if filepath:
+            i = 0
+            total = len(self.res_file.models)
+
+            for model in self.res_file.models:
+
+                QtCore.QCoreApplication.processEvents()
+                i+=1
+                name = str(bytes(model.res_name).strip(), encoding="ascii")
+
+                self.waterbox_renderer.create_drawlist(model, isbw1=self.res_file.is_bw())
+                #self.waterbox_renderer.do_redraw()
+
+                folderpath = os.path.join(filepath, name)
+                os.makedirs(folderpath, exist_ok=True)
+                self.statusbar.showMessage("Exporting {0} ({1} out of {2})".format(name, i, total))
+                self.waterbox_renderer.main_model.export_obj(folderpath, self.waterbox_renderer.texarchive)
+            self.waterbox_renderer.do_redraw()
+            self.pathsconfig["exportedModels"] = filepath
+            save_cfg(self.configuration)
+            self.statusbar.showMessage("Finished", 3000)
+
     def setup_ui_toolbar(self):
-        # self.toolbar = QtWidgets.QToolBar("Test", self)
-        # self.toolbar.addAction(QAction("TestToolbar", self))
-        # self.toolbar.addAction(QAction("TestToolbar2", self))
-        # self.toolbar.addAction(QAction("TestToolbar3", self))
-
-        # self.toolbar2 = QtWidgets.QToolBar("Second Toolbar", self)
-        # self.toolbar2.addAction(QAction("I like cake", self))
-
-        # self.addToolBar(self.toolbar)
-        # self.addToolBarBreak()
-        # self.addToolBar(self.toolbar2)
         pass
 
     def connect_actions(self):
         #self.model_list.itemClicked.connect(self.select_model)
         self.model_list.itemSelectionChanged.connect(self.select_model)
-        self.waterbox_renderer.camera_moved.connect(self.update_cam_pos)
+        #self.waterbox_renderer.camera_moved.connect(self.update_cam_pos)
 
         return
-        #self.pikmin_gen_view.select_update.connect(self.action_update_info)
-        self.pik_control.lineedit_coordinatex.textChanged.connect(self.create_field_edit_action("coordinatex"))
-        self.pik_control.lineedit_coordinatey.textChanged.connect(self.create_field_edit_action("coordinatey"))
-        self.pik_control.lineedit_coordinatez.textChanged.connect(self.create_field_edit_action("coordinatez"))
 
-        self.pik_control.lineedit_rotationx.textChanged.connect(self.create_field_edit_action("rotationx"))
-        self.pik_control.lineedit_rotationy.textChanged.connect(self.create_field_edit_action("rotationy"))
-        self.pik_control.lineedit_rotationz.textChanged.connect(self.create_field_edit_action("rotationz"))
-
-        #self.pikmin_gen_view.position_update.connect(self.action_update_position)
-
-        #self.pikmin_gen_view.customContextMenuRequested.connect(self.mapview_showcontextmenu)
-        self.pik_control.button_edit_object.pressed.connect(self.action_open_editwindow)
-
-        self.pik_control.button_add_object.pressed.connect(self.button_open_add_item_window)
-        self.pik_control.button_move_object.pressed.connect(self.button_move_objects)
-        #self.pikmin_gen_view.move_points.connect(self.action_move_objects)
-        #self.pikmin_gen_view.create_waypoint.connect(self.action_add_object)
-        self.pik_control.button_ground_object.pressed.connect(self.action_ground_objects)
-        self.pik_control.button_remove_object.pressed.connect(self.action_delete_objects)
-
-        """delete_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(Qt.Key_Delete), self)
-        delete_shortcut.activated.connect(self.action_delete_objects)
-
-        undo_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(Qt.CTRL + Qt.Key_Z), self)
-        undo_shortcut.activated.connect(self.action_undo)
-
-        redo_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(Qt.CTRL + Qt.Key_Y), self)
-        redo_shortcut.activated.connect(self.action_redo)"""
-
-        #self.pikmin_gen_view.rotate_current.connect(self.action_rotate_object)
 
     #@catch_exception
     def button_load_level(self):
@@ -311,19 +250,15 @@ class GenEditor(QMainWindow):
 
     @catch_exception
     def select_model(self):
-        #print("selected", curr, self.model_list.currentRow())
-
         row = self.model_list.currentRow()
 
-        self.waterbox_renderer.create_drawlist(self.res_file.models[row])
+        self.waterbox_renderer.create_drawlist(self.res_file.models[row], isbw1=self.res_file.is_bw())
         self.waterbox_renderer.do_redraw()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
 
         if event.key() == Qt.Key_Shift:
             self.waterbox_renderer.shift_is_pressed = True
-        #elif event.key() == Qt.Key_R:
-        #    self.pikmin_gen_view.rotation_is_pressed = True
 
         if event.key() == Qt.Key_W:
             self.waterbox_renderer.MOVE_FORWARD = 1
@@ -342,16 +277,9 @@ class GenEditor(QMainWindow):
         elif event.key() == Qt.Key_T:
             self.waterbox_renderer.ROTATE_RIGHT = 1
 
-        #if event.key() == Qt.Key_Plus:
-        #    self.pikmin_gen_view.zoom_in()
-        #elif event.key() == Qt.Key_Minus:
-        #    self.pikmin_gen_view.zoom_out()
-
     def keyReleaseEvent(self, event: QtGui.QKeyEvent):
         if event.key() == Qt.Key_Shift:
             self.waterbox_renderer.shift_is_pressed = False
-        #elif event.key() == Qt.Key_R:
-        #    self.pikmin_gen_view.rotation_is_pressed = False
 
         if event.key() == Qt.Key_W:
             self.waterbox_renderer.MOVE_FORWARD = 0
@@ -371,78 +299,6 @@ class GenEditor(QMainWindow):
             self.waterbox_renderer.ROTATE_RIGHT = 0
 
 
-    @catch_exception
-    def mapview_showcontextmenu(self, position):
-        context_menu = QMenu(self)
-        action = QAction("Copy Coordinates", self)
-        action.triggered.connect(self.action_copy_coords_to_clipboard)
-        context_menu.addAction(action)
-        context_menu.exec(self.mapToGlobal(position))
-        context_menu.destroy()
-
-    def action_copy_coords_to_clipboard(self):
-        if self.current_coordinates is not None:
-            QApplication.clipboard().setText(", ".join(str(x) for x in self.current_coordinates))
-
-    def action_update_position(self, event, pos):
-        self.current_coordinates = pos
-        self.statusbar.showMessage(str(pos))
-
-    def update_cam_pos(self, x, y, z):
-        if self.lastshow is None or default_timer() - self.lastshow > 1/5.0:
-            self.statusbar.showMessage(str((x,y,z)))
-            self.lastshow = default_timer()
-
-
-class EditorHistory(object):
-    def __init__(self, historysize):
-        self.history = []
-        self.step = 0
-        self.historysize = historysize
-
-    def reset(self):
-        del self.history
-        self.history = []
-        self.step = 0
-
-    def _add_history(self, entry):
-        if self.step == len(self.history):
-            self.history.append(entry)
-            self.step += 1
-        else:
-            for i in range(len(self.history) - self.step):
-                self.history.pop()
-            self.history.append(entry)
-            self.step += 1
-            assert len(self.history) == self.step
-
-        if len(self.history) > self.historysize:
-            for i in range(len(self.history) - self.historysize):
-                self.history.pop(0)
-                self.step -= 1
-
-    def add_history_addobject(self, pikobject):
-        self._add_history(("AddObject", pikobject))
-
-    def add_history_removeobjects(self, objects):
-        self._add_history(("RemoveObjects", objects))
-
-    def history_undo(self):
-        if self.step == 0:
-            return None
-
-        self.step -= 1
-        return self.history[self.step]
-
-    def history_redo(self):
-        if self.step == len(self.history):
-            return None
-
-        item = self.history[self.step]
-        self.step += 1
-        return item
-
-
 if __name__ == "__main__":
     import sys
     import platform
@@ -457,8 +313,8 @@ if __name__ == "__main__":
         f.write("")
 
     with open("log.txt", "a") as f:
-        sys.stdout = f
-        sys.stderr = f
+        #sys.stdout = f
+        #sys.stderr = f
         print("Python version: ", sys.version)
         pikmin_gui = GenEditor()
         #pikmin_gui.setWindowIcon(QtGui.QIcon('resources/icon.ico'))
