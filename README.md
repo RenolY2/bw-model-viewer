@@ -14,6 +14,9 @@ loaded archive into the chosen folder in a row. Each model is put into a folder 
 takes some time, you can see the progress in the bar in the lower left corner of the program. With BW2 models you might
 temporarily see messed up textures in the renderer, this is purely visual and has no effect on the actual exported files.
 
+Textures->Export All Textures as PNG exports every texture in the currently loaded archive to the chosen folder. This
+includes textures that are not used by any model. This is useful for exporting many UI-based textures.
+
 Some model parts might appear offset. In such cases it's recommended to check ingame in Dolphin (using freeview
 or just getting close to such an unit) what the actual position of the model parts is supposed to be and 
 adjust it according to that.

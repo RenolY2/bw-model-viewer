@@ -209,13 +209,13 @@ class Texture(object):
 
                     array_x = x + ix + iix
                     array_y = y + iy + iiy
-                    #if array_x < size_x and array_y < size_y:
+                    if array_x < size_x and array_y < size_y:
 
-                    rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
-                    rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
-                    rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
-                    rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
-                    #else:
+                        rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
+                        rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
+                        rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
+                        rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
+                        #else:
                     #    print("tried to write outside of bounds:", size_x, size_y, x + ix + iix, y + iy + iiy)
 
                 if ii2 == 3:
@@ -330,6 +330,9 @@ class Texture(object):
                         imgx = x + ix
                         imgy = y + iy
 
+                        if imgx >= size_x or imgy >= size_y:
+                            continue
+
                         a, r = read_uint8(f), read_uint8(f)
                         rgbadata[(imgx + imgy * size_x) * 4 + 0] = r
                         rgbadata[(imgx + imgy * size_x) * 4 + 3] = a
@@ -340,6 +343,9 @@ class Texture(object):
                         #iy = 3 - iy
                         imgx = x + ix
                         imgy = y + iy
+
+                        if imgx >= size_x or imgy >= size_y:
+                            continue
 
                         g, b = read_uint8(f), read_uint8(f)
                         rgbadata[(imgx + imgy * size_x) * 4 + 1] = g
@@ -389,6 +395,7 @@ class Texture(object):
         self.success = True
 
         print(name, self.format)
+        print(self.size_x, self.size_y)
         assert self.format[8:] == b"A8R8G8B8"
         if self.mipcount == 0:
             self.success = False
@@ -480,13 +487,12 @@ class Texture(object):
 
                     array_x = x + ix + iix
                     array_y = y + iy + iiy
-                    #if array_x < size_x and array_y < size_y:
-
-                    rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
-                    rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
-                    rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
-                    rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
-                    #else:
+                    if array_x < size_x and array_y < size_y:
+                        rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
+                        rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
+                        rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
+                        rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
+                        #else:
                     #    print("tried to write outside of bounds:", size_x, size_y, x + ix + iix, y + iy + iiy)
 
                 if ii2 == 3:
@@ -599,7 +605,8 @@ class Texture(object):
                         #iy = 3 - iy
                         imgx = x + ix
                         imgy = y + iy
-
+                        if imgx >= size_x or imgy >= size_y:
+                            continue
                         a, r = read_uint8(f), read_uint8(f)
                         rgbadata[(imgx + imgy * size_x) * 4 + 0] = r
                         rgbadata[(imgx + imgy * size_x) * 4 + 3] = a
@@ -610,7 +617,8 @@ class Texture(object):
                         #iy = 3 - iy
                         imgx = x + ix
                         imgy = y + iy
-
+                        if imgx >= size_x or imgy >= size_y:
+                            continue
                         g, b = read_uint8(f), read_uint8(f)
                         rgbadata[(imgx + imgy * size_x) * 4 + 1] = g
                         rgbadata[(imgx + imgy * size_x) * 4 + 2] = b

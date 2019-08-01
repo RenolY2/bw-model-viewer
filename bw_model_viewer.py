@@ -22,6 +22,7 @@ from lib.texture import TextureArchive
 from bw_model_viewer_widgets import RenderWindow, catch_exception, catch_exception_with_dialog, open_error_dialog
 #from lib.model_rendering import Waterbox
 from lib.bw_archive import BWArchive
+from lib.texture import Texture
 PIKMIN2GEN = "Resource Files (*.res)"
 
 
@@ -151,8 +152,17 @@ class GenEditor(QMainWindow):
         self.export_model_obj_batch_action.triggered.connect(self.export_model_obj_batch)
         self.model_menu.addAction(self.export_model_obj_batch_action)
 
+
+        self.texturemenu = QMenu(self.menubar)
+        self.texturemenu.setTitle("Textures")
+        self.export_tex_action = QAction("Export All Textures as PNG", self)
+        self.export_tex_action.triggered.connect(self.export_all_textures)
+        self.texturemenu.addAction(self.export_tex_action)
+
         self.menubar.addAction(self.file_menu.menuAction())
         self.menubar.addAction(self.model_menu.menuAction())
+        self.menubar.addAction(self.texturemenu.menuAction())
+
         #self.menubar.addAction(self.collision_menu.menuAction())
         #self.menubar.addAction(self.misc_menu.menuAction())
         self.setMenuBar(self.menubar)
@@ -207,6 +217,37 @@ class GenEditor(QMainWindow):
 
         return
 
+    @catch_exception_with_dialog
+    def export_all_textures(self, _):
+        if self.res_file is None:
+            return
+
+        filepath = QFileDialog.getExistingDirectory(
+            self, "Open Directory",
+            self.pathsconfig["exportedModels"])
+        isbw = self.res_file.is_bw()
+
+        curr = 0
+        total_tex = len(self.texture_archive.textures)
+        if filepath and self.texture_archive is not None:
+            for texname, texentry in self.texture_archive.textures.items():
+                curr += 1
+                QtCore.QCoreApplication.processEvents()
+
+                tex = Texture(texname)
+                if isbw:
+                    tex.from_file_bw1(texentry.fileobj)
+                else:
+                    tex.from_file(texentry.fileobj)
+                filename = str(texname.strip(b"\x00"), encoding="ascii")+".png"
+                outpath = os.path.join(filepath, filename)
+
+                tex.dump_to_file(outpath)
+                self.statusbar.showMessage("Extracted {0} ({1} of {2})".format(
+                    filename, curr, total_tex
+                ))
+            self.statusbar.showMessage("Finished", 5000)
+            self.pathsconfig["exportedModels"] = filepath
 
     #@catch_exception
     def button_load_level(self):
