@@ -3,7 +3,7 @@ from io import BytesIO
 from array import array
 from struct import Struct
 from PyQt5.QtGui import QImage, QPainter
-from math import ceil
+from math import ceil, floor
 from timeit import default_timer
 
 from .read_binary import *
@@ -298,19 +298,23 @@ class Texture(object):
             for iy in range(blocks_vertical):
                 for ix in range(blocks_horizontal):
                     block = f.read(8*4*1)
+                    if len(block) < 32:
+                        break
 
                     for y in range(4):
                         for x in range(8):
-                            #intensity = block[(x + y*4)*2 + 1]
-                            #alpha = block[(x + y * 4) * 2 + 0]
-                            index = block[x + y*8]
-                            r, g, b, a = palette[index]# index, index, index, 255#palette[index]
-
                             imgx = ix * 8 + x
                             imgy = iy * 4 + y
 
                             if imgx >= size_x or imgy >= size_y:
                                 continue
+
+                            #intensity = block[(x + y*4)*2 + 1]
+                            #alpha = block[(x + y * 4) * 2 + 0]
+                            index = block[x + y*8]
+                            r, g, b, a = palette[index]# index, index, index, 255#palette[index]
+
+
 
                             rgbadata[(imgx + imgy * size_x) * 4 + 0] = r
                             rgbadata[(imgx + imgy * size_x) * 4 + 1] = g
