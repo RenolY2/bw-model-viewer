@@ -354,8 +354,8 @@ if __name__ == "__main__":
         f.write("")
 
     with open("log.txt", "a") as f:
-        #sys.stdout = f
-        #sys.stderr = f
+        sys.stdout = f
+        sys.stderr = f
         print("Python version: ", sys.version)
         pikmin_gui = GenEditor()
         #pikmin_gui.setWindowIcon(QtGui.QIcon('resources/icon.ico'))
