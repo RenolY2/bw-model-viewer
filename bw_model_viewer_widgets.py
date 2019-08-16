@@ -351,11 +351,16 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
             glUniform1i(texvar, 0)
             bumpvar = glGetUniformLocation(self.shader, "bump")
             glUniform1i(bumpvar, 1)
+            lightvar = glGetUniformLocation(self.shader, "light")
         else:
             glUseProgram(self.shaderSimple)
+            texvar = glGetUniformLocation(self.shaderSimple, "tex")
+            # print(texvar, self.shader, type(self.shader))
+            glUniform1i(texvar, 0)
+            lightvar = glGetUniformLocation(self.shaderSimple, "light")
 
         currenttime = default_timer()
-        lightvar = glGetUniformLocation(self.shader, "light")
+
         rot = (currenttime % 9)*40 - self.rotation
         glUniform3fv(lightvar, 1, (sin(radians(rot)), 0, cos(radians(rot))))
         self.do_redraw()
