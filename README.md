@@ -11,7 +11,7 @@ Textures are also exported as .png but only the diffuse texture is used by the o
 
 Model->Export All as OBJ is similar to "Export current as OBJ" but it exports every model from the currently 
 loaded archive into the chosen folder in a row. Each model is put into a folder named after the model. This process
-takes some time, you can see the progress in the bar in the lower left corner of the program. With BW2 models you might
+takes some time, you can see the progress in the bar in the lower left corner of the program. With models you might
 temporarily see messed up textures in the renderer, this is purely visual and has no effect on the actual exported files.
 
 Textures->Export All Textures as PNG exports every texture in the currently loaded archive to the chosen folder. This
@@ -28,6 +28,7 @@ Controls:
 * Holding shift while moving makes you go faster
 * Right mouse button + mouse movement - rotates camera view
 * R, T - rotates model in-place. Hold shift to rotate faster
+* Arrow Key Up/Down - Select previous/next model in model list
 
 Note for 3ds Max users: If you have trouble importing the exported obj files, try enabling the import option 
 that says "Import as single mesh".
