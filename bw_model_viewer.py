@@ -329,12 +329,15 @@ class GenEditor(QMainWindow):
 
         elif event.key() == Qt.Key_Up:
             row = self.model_list.currentRow()-1
-            if row < 0: row = 0
+            if row < 0:
+                row = 0
             self.model_list.setCurrentRow(row)
 
         elif event.key() == Qt.Key_Down:
             row = self.model_list.currentRow()+1
-            if row >= len(self.res_file.models):
+            if self.res_file is None:
+                row = 0
+            elif row >= len(self.res_file.models):
                 row = len(self.res_file.models)-1
             self.model_list.setCurrentRow(row)
 
@@ -374,8 +377,8 @@ if __name__ == "__main__":
         f.write("")
 
     with open("log.txt", "a") as f:
-        sys.stdout = f
-        sys.stderr = f
+        #sys.stdout = f
+        #sys.stderr = f
         print("Python version: ", sys.version)
         pikmin_gui = GenEditor()
         #pikmin_gui.setWindowIcon(QtGui.QIcon('resources/icon.ico'))
