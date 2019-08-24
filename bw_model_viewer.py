@@ -59,6 +59,7 @@ class GenEditor(QMainWindow):
         self.addobjectwindow_last_selected = None
 
         self.lastshow = None
+        self.modelindices = {}
 
     @catch_exception
     def reset(self):
@@ -270,9 +271,16 @@ class GenEditor(QMainWindow):
                 try:
                     self.res_file = BWArchive(f)
                     self.texture_archive = TextureArchive(self.res_file)
-
+                    self.modelindices = {}
+                    modellist = []
                     for model in self.res_file.models:
-                        self.model_list.addItem(str(model.res_name, encoding="ascii"))
+                        name = str(model.res_name, encoding="ascii")
+                        modellist.append(name)
+                        self.modelindices[name] = len(modellist)-1
+                    modellist.sort()
+                    for name in modellist:
+                        self.model_list.addItem(name)
+
                     self.waterbox_renderer.texarchive = self.texture_archive
 
 
@@ -285,19 +293,20 @@ class GenEditor(QMainWindow):
                     self.current_gen_path = filepath
 
                 except Exception as error:
+                    self.modelindices = {}
                     print("Error appeared while loading:", error)
                     traceback.print_exc()
                     open_error_dialog(str(error), self)
 
-    @catch_exception
+    @catch_exception_with_dialog
     def select_model(self):
-        row = self.model_list.currentRow()
+        item = self.model_list.currentItem().text()
+        index = self.modelindices[item]
 
-        self.waterbox_renderer.create_drawlist(self.res_file.models[row], isbw1=self.res_file.is_bw())
+        self.waterbox_renderer.create_drawlist(self.res_file.models[index], isbw1=self.res_file.is_bw())
         self.waterbox_renderer.do_redraw()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
-
         if event.key() == Qt.Key_Shift:
             self.waterbox_renderer.shift_is_pressed = True
 
@@ -317,6 +326,17 @@ class GenEditor(QMainWindow):
             self.waterbox_renderer.ROTATE_LEFT = 1
         elif event.key() == Qt.Key_T:
             self.waterbox_renderer.ROTATE_RIGHT = 1
+
+        elif event.key() == Qt.Key_Up:
+            row = self.model_list.currentRow()-1
+            if row < 0: row = 0
+            self.model_list.setCurrentRow(row)
+
+        elif event.key() == Qt.Key_Down:
+            row = self.model_list.currentRow()+1
+            if row >= len(self.res_file.models):
+                row = len(self.res_file.models)-1
+            self.model_list.setCurrentRow(row)
 
     def keyReleaseEvent(self, event: QtGui.QKeyEvent):
         if event.key() == Qt.Key_Shift:
