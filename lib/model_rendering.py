@@ -10,6 +10,7 @@ from math import floor, ceil
 
 from timeit import default_timer as timer
 
+
 class Material(object):
     def __init__(self):
         self.tex1 = None
@@ -194,8 +195,8 @@ class BW2Model(Model):
         texcoord_offset = 1
         vertex_offset = 1
 
-        obj = open(objpath, "w")
-        mtl = open(matpath, "w")
+        obj = open(objpath, "w", encoding="utf-8")
+        mtl = open(matpath, "w", encoding="utf-8")
         obj.write("mtllib {0}\n".format(modelname+".mtl"))
         try:
             for node in self.nodes:
@@ -228,18 +229,24 @@ class BW2Model(Model):
                     obj.write("vt {0} {1}\n".format(u, 1-v))
 
                 for i, mat in enumerate(node.materials):
-                    matname = str(node.name.strip(b"\00"), encoding="ascii")+"_mat{0}".format(i)
+                    print(node.name)
+                    matname = str(node.name.strip(b"\00"), encoding="latin-1")+"_mat{0}".format(i)
+
                     mtl.write("newmtl {0}\n".format(matname))
                     texturename = mat.tex1
-                    mtl.write("map_kd {0}\n".format(str(texturename.strip(b"\x00"), encoding="ascii") + ".png"))
+                    if texturename is None:
+                        texturename = matname+"_notex1"
+                        mtl.write("map_kd {0}\n".format(texturename + ".png"))
+                    else:
+                        mtl.write("map_kd {0}\n".format(str(texturename.strip(b"\x00"), encoding="ascii") + ".png"))
 
             for node in self.nodes:
                 if node.do_skip():
                     continue
                 materials = []
-                obj.write("o {0}\n".format(str(node.name.strip(b"\00"), encoding="ascii")))
+                obj.write("o {0}\n".format(str(node.name.strip(b"\00"), encoding="latin-1")))
                 for i, mat in enumerate(node.materials):
-                    matname = str(node.name.strip(b"\00"), encoding="ascii")+"_mat{0}".format(i)
+                    matname = str(node.name.strip(b"\00"), encoding="latin-1")+"_mat{0}".format(i)
                     materials.append((matname, mat))
 
                 for matindex, mesh in node.meshes:
@@ -252,7 +259,7 @@ class BW2Model(Model):
                         #elif prim.type == 0x90:
                         #    glBegin(GL_TRIANGLES)
                         else:
-                            raise RuntimeError("woops triangle list")
+                            raise RuntimeError("woops unsupported prim type {0:x}".format(prim.type))
                         i = 0
                         vert1, vert2, vert3 = None, None, None
 
@@ -279,6 +286,7 @@ class BW2Model(Model):
                                 v1 = vert2
                                 v2 = vert1
                                 v3 = vert3
+
 
                             obj.write("f ")
 
@@ -325,6 +333,64 @@ class BW2Model(Model):
 
         obj.close()
         mtl.close()
+
+
+class AragornModel(BW2Model):
+    def __init__(self):
+        self.version = None
+        self.nodecount = None
+        self.additionalcount = None
+        self.additionaldata = []
+        self.unkint = None
+        self.floattuple = None
+
+        self.bgfname = b"Model.bgf"
+
+        self.nodes = []
+
+    def from_file(self, f):
+        self.version = (read_uint32(f), read_uint32(f))
+        self.nodecount = read_uint16(f)
+        self.additionaldatacount = read_uint16(f)
+        self.unkint = read_uint32(f)
+        self.floattuple = (read_float(f), read_float(f), read_float(f), read_float(f))
+
+
+        bgfnamelength = read_uint32(f)
+        self.bgfname = f.read(bgfnamelength)
+
+        self.additionaldata = []
+        for i in range(self.additionaldatacount):
+            self.additionaldata.append(read_uint32(f))
+        self._skip_section(f, b"LCSC")
+        self._skip_section(f, b"MEMX")  # Unused
+
+        self.nodes = []
+        for i in range(self.nodecount):
+            node = NodeAragorn(self.additionaldatacount)
+            node.from_file(f)
+            self.nodes.append(node)
+
+        cntname = f.read(4)
+        #print(cntname)
+        assert cntname == b"TCNC"
+        cnctsize = read_uint32_le(f)
+        start = f.tell()
+        assert cnctsize == self.unkint*4
+
+        for i in range(self.unkint):
+            parent = read_uint16_le(f)
+            child = read_uint16_le(f)
+            #print("Concat:", child, parent)
+            self.nodes[child].parent = self.nodes[parent]
+
+        assert f.tell() == start+cnctsize
+        self.render_order = []
+        for node in self.nodes:
+            #start = timer()
+            node.create_displaylists()
+            #print("node", node.name, "took", timer() - start, "s")
+            self.render_order.append(node )
 
 
 class BW1Model(BW2Model):
@@ -729,8 +795,11 @@ class NodeBW2(object):
                 glDeleteLists(i, 1)
             self._displaylists = []
 
+        if len(self.vertices) == 0:
+            return
         #for material, mesh in zip(self.materials, self.meshes):
         for i, mesh in self.meshes:
+
             material = self.materials[i]
 
             displist = glGenLists(1)
@@ -779,7 +848,8 @@ class NodeBW2(object):
                 elif prim.type == 0x90:
                     glBegin(GL_TRIANGLES)
                 else:
-                    assert False
+                    print("woop woop")
+                    raise RuntimeError("Unknown Prim Type: {0:x}".format(prim.type))
 
                 for vertex in prim.vertices:
                     if len(vertex) == 0:
@@ -787,6 +857,8 @@ class NodeBW2(object):
                     posindex, normindex = vertex[0], vertex[1]
                     tex0 = vertex[2]
                     tex1 = vertex[3]
+                    if posindex >= len(vertices):
+                        print(len(vertices), posindex)
                     x,y,z = vertices[posindex]
 
                     if not tex1 is None:
@@ -1037,6 +1109,278 @@ class NodeBW1(NodeBW2):
             f.read(size)
             self.sections.append(secname)
         #print("end of node")
+        assert f.tell() == nodeend
+
+
+class NodeAragorn(NodeBW2):
+    def __init__(self, additionaldatacount):
+        self.children = []
+        self.parent = None
+        self.transform = None
+
+        self.additionaldatacount = additionaldatacount
+
+        self.bbox = None  # Boundary box
+        self.rnod = None  # Only used by soldier models?
+        self.materials = []
+
+        self.sections = []
+
+        self.name = b"NodeName"
+
+        self.unkshort1 = None
+        self.unkshort2 = None
+        self.unkshort3 = None
+        self.padd = None
+        self.xbs2count = None
+        self.vscl = None
+
+        self.vertices = []
+        self.normals = []
+        self.binormals = []
+        self.tangents = []
+        self.triprimitives = []
+        self.meshes = []
+        self.uvmaps = [[], [], [], []]
+
+        self.additionaldata = []
+        self.lods = []
+
+        self._displaylists = []
+
+        self.world_center = Vector3(0, 0, 0)
+
+        self._mvmat = None
+
+    def do_skip(self):
+        return b"NODRAW" in self.name or b"COLLIDE" in self.name or b"COLLISION" in self.name or self.xbs2count == 0
+
+    def setparent(self, parent):
+        self.parent = parent
+
+    def from_file(self, f):
+        nodename = f.read(4)
+        assert nodename == b"EDON"
+        print("We are reading a node here")
+        nodesize = read_uint32_le(f)
+        nodestart = f.tell()
+        nodeend = f.tell() + nodesize
+
+        nodenamelength = read_uint32(f)
+        self.name = f.read(nodenamelength)
+        headerstart = f.tell()
+        # Do stuff
+        self.unkshort1, self.unkshort2, self.unkshort3, self.padd, self.xbs2count = unpack("HHHHI", f.read(12))
+        assert self.padd == 0
+        # unkshort1, unkshort2, unkshort3, padd = unpack(">HHHH", f.read(8))
+        floats = unpack("f" * 11, f.read(4 * 11))
+        self.transform = Transform(floats)
+
+        assert f.tell() - headerstart == 0x38
+
+        self.additionaldata = []
+        for i in range(self.additionaldatacount):
+            self.additionaldata.append(read_uint32(f))
+        start = f.tell()
+
+        assert read_id(f) == b"BBOX"
+        assert read_uint32_le(f) == 4 * 6
+        ppos = f.tell()
+        x1, y1, z1, x2, y2, z2 = unpack("ffffff", f.read(4 * 6))
+
+        self.bbox = Box((x1, y1, z1), (x2, y2, z2))
+
+        self.world_center.x = (x1 + x2) / 2.0
+        self.world_center.y = (y1 + y2) / 2.0
+        self.world_center.z = (z1 + z2) / 2.0
+
+        secname = read_id(f)
+
+        size = read_uint32_le(f)
+
+        while secname != b"MATL":
+            print("Reading Section", secname)
+            if secname == b"RNOD":
+                self.rnod = f.read(size)
+
+            elif secname == b"VSCL":
+                assert size == 4
+                self.vscl = read_float_le(f)
+
+            else:
+                raise RuntimeError("Unknown secname {0}", secname)
+
+            secname = read_id(f)
+            size = read_uint32_le(f)
+
+        assert secname == b"MATL"
+        assert size % 0xA4 == 0
+        assert self.xbs2count * 0xA4 == size
+
+        self.materials = []
+        for i in range(self.xbs2count):
+            material = Material()
+            material.from_file(f)
+            self.materials.append(material)
+
+        vertexdesc = 0
+
+        self.uvmaps = [[], [], [], []]
+
+        while f.tell() < nodeend:
+            secname = read_id(f)
+            size = read_uint32_le(f)
+            end = f.tell() + size
+            print("Reading Section", secname)
+            if secname == b"SCNT":
+                val = read_uint32(f)
+                assert size == 4
+                self.lods.append(val)
+
+            elif secname in (b"VUV1", b"VUV2", b"VUV3", b"VUV4"):
+                uvindex = secname[3] - b"1"[0]
+
+                for i in range(size // 4):
+                    scale = 2.0 ** 11
+                    u_int = read_int16(f)
+                    v_int = read_int16(f)
+                    u, v = (u_int) / (scale), (v_int) / (scale)
+                    self.uvmaps[uvindex].append((u, v))
+
+            elif secname == b"XBS2":
+                # eprint(hex(f.tell()))
+                materialindex = read_uint32(f)
+                #unknown = (read_uint32(f), read_uint32(f))
+                unknown = f.read(0x20)
+                gx_data_size = read_uint32(f)
+                print("Data size", hex(gx_data_size))
+                gx_data_end = f.tell() + gx_data_size
+                # print(hex(gx_data_end), hex(gx_data_size))
+
+                mesh = []
+                self.meshes.append((materialindex, mesh))
+
+                while f.tell() < gx_data_end:
+                    opcode = read_uint8(f)
+
+                    if opcode == 0x8:  # Load CP Reg
+                        command = read_uint8(f)
+                        val = read_uint32(f)
+                        if command == 0x50:
+                            vertexdesc &= ~0x1FFFF
+                            vertexdesc |= val
+                        elif command == 0x60:
+                            vertexdesc &= 0x1FFFF
+                            vertexdesc |= (val << 17)
+                        else:
+                            raise RuntimeError("unknown CP command {0:x}".format(command))
+
+                    elif opcode == 0x10:  # Load XF Reg
+                        x = read_uint32(f)
+                        y = read_uint32(f)
+
+                    elif opcode & 0xF8 == 0x98:  # Triangle strip
+                        attribs = VertexDescriptor()
+                        attribs.from_value(vertexdesc)
+                        if opcode == 0x9A:
+                            print([x for x in attribs.active_attributes()])
+                        vertex_count = read_uint16(f)
+                        prim = Primitive(0x98)
+                        # print(bin(vertexdesc))
+                        # print([x for x in attribs.active_attributes()])
+
+                        for i in range(vertex_count):
+                            primattrib = [None, None,
+                                          None, None, None, None, None, None, None, None]
+
+                            for attrib, fmt in attribs.active_attributes():
+                                # matindex = read_uint8(f)
+
+                                if attrib == VTX.Position:
+                                    if fmt == VTXFMT.INDEX8:
+                                        posIndex = read_uint8(f)
+                                    elif fmt == VTXFMT.INDEX16:
+                                        posIndex = read_uint16(f)
+                                    else:
+                                        raise RuntimeError("unknown position format")
+                                    primattrib[0] = posIndex
+
+                                elif attrib == VTX.Normal:
+                                    if fmt == VTXFMT.INDEX8:
+                                        normIndex = read_uint8(f)
+                                    elif fmt == VTXFMT.INDEX16:
+                                        normIndex = read_uint16(f)
+                                    else:
+                                        raise RuntimeError("unknown normal format")
+                                    primattrib[1] = normIndex
+                                elif attrib is not None and VTX.Tex0Coord <= attrib <= VTX.Tex7Coord:
+                                    coordindex = attrib - VTX.Tex0Coord
+                                    val = read_uint8(f)
+                                    primattrib[2 + coordindex] = val
+                                elif fmt is not None:
+                                    if fmt == VTXFMT.INDEX8:
+                                        read_uint8(f)
+                                    elif fmt == VTXFMT.INDEX16:
+                                        read_uint16(f)
+                                    else:
+                                        RuntimeError("unknown fmt format")
+
+                                else:
+                                    read_uint8(f)
+
+                            prim.vertices.append(primattrib)
+
+                        # self.triprimitives.append(prim)
+                        mesh.append(prim)
+                    elif opcode == 0x00:
+                        pass
+                    else:
+                        # print(self.name, hex(f.tell()-nodestart))
+                        raise RuntimeError("Unknown opcode: {0:x}".format(opcode))
+
+                f.seek(gx_data_end)
+
+            elif secname == b"VPOS":
+                if len(self.vertices) > 0:
+                    f.read(size)
+                    self.sections.append(secname)
+                    break
+                # print(self.name, size)
+                assert size % 6 == 0
+                # assert size%4 == 0
+
+                for i in range(size // 6):
+                    # self.vertices.append((read_float_le(f), read_float_le(f), read_float_le(f)))
+                    self.vertices.append(read_int16_tripple(f))
+
+            elif secname == b"VNRM":
+                assert size % 3 == 0
+                for i in range(size // 3):
+                    self.normals.append(read_int8_tripple(f))
+
+            elif secname == b"VNBT":
+                assert size % 3 == 0
+                assert size % 9 == 0
+                assert size % 36 == 0
+                for i in range(size // 36):
+                    # self.normals.append((read_int8(f), read_int8(f), read_int8(f)))
+                    # f.read(6)
+                    self.normals.append(read_float_tripple(f))
+                    self.binormals.append(read_float_tripple(f))
+
+                    self.tangents.append(read_float_tripple(f))
+
+            else:
+                f.read(size)
+            self.sections.append(secname)
+            print(secname)
+            assert f.tell() == end
+        while f.tell() < nodeend:
+            secname = read_id(f)
+            size = read_uint32_le(f)
+            f.read(size)
+            self.sections.append(secname)
+
         assert f.tell() == nodeend
 
 

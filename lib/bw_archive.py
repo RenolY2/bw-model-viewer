@@ -273,6 +273,7 @@ class BWArchive(BWArchiveBase):
 
         is_bw1 = True
 
+
         # Unpack RXET into an object containing other resources
         assert self.entries[0].name == b"RXET"
         self.entries[0] = self.rxet = self.entries[0].as_section(cls=ArchiveHeader)
@@ -323,7 +324,7 @@ class BWArchive(BWArchiveBase):
         self.effects = [x for x in filter(lambda k: k.name == b"FEQT", self.entries)]
         self.scripts = [x for x in filter(lambda k: k.name == b"PRCS", self.entries)]
         self.textures = [x for x in self.ftb.entries]
-
+        self.game = self.get_game()
         """for nameentry, dataentry in self.models:
             print(bytes(nameentry.modelname))
         print(self.dnos.entries[0].count)
@@ -381,6 +382,22 @@ class BWArchive(BWArchiveBase):
         self.hfsb.count = (len(self.dnos.entries) - 1) // 2
 
         return super().pack()
+
+    def get_game(self):
+        result = None
+        if self.ftb.entries[0].name != b"DXTG":
+            result = "BW1"
+        else:
+            print(self.textures[0])
+            print(bytes(self.textures[0].data))
+
+            if b"RPIM" in bytes(self.textures[0].data):
+                result = "AQ"
+            else:
+                result = "BW2"
+        print("HELLOOOO", result)
+        return result
+
 
     def is_bw2(self):
         return self.ftb.entries[0].name == b"DXTG"

@@ -1,3 +1,4 @@
+print("Hello!", __name__)
 import traceback
 import gzip
 import os
@@ -196,7 +197,7 @@ class GenEditor(QMainWindow):
                 i+=1
                 name = str(bytes(model.res_name).strip(), encoding="ascii")
 
-                self.waterbox_renderer.create_drawlist(model, isbw1=self.res_file.is_bw())
+                self.waterbox_renderer.create_drawlist(model, game=self.res_file.game)
                 #self.waterbox_renderer.do_redraw()
 
                 folderpath = os.path.join(filepath, name)
@@ -226,7 +227,8 @@ class GenEditor(QMainWindow):
         filepath = QFileDialog.getExistingDirectory(
             self, "Open Directory",
             self.pathsconfig["exportedModels"])
-        isbw = self.res_file.is_bw()
+        #isbw = self.res_file.game
+        game = self.res_file.game
 
         curr = 0
         total_tex = len(self.texture_archive.textures)
@@ -236,10 +238,18 @@ class GenEditor(QMainWindow):
                 QtCore.QCoreApplication.processEvents()
 
                 tex = Texture(texname)
-                if isbw:
+
+                if game == "BW1":
                     tex.from_file_bw1(texentry.fileobj)
-                else:
+                elif game == "BW2":
                     tex.from_file(texentry.fileobj)
+                elif game == "AQ":
+                    tex.from_file_aragorn(texentry.fileobj)
+
+                #if isbw:
+                #    tex.from_file_bw1(texentry.fileobj)
+                #else:
+                #    tex.from_file(texentry.fileobj)
                 filename = str(texname.strip(b"\x00"), encoding="ascii")+".png"
                 outpath = os.path.join(filepath, filename)
 
@@ -303,7 +313,7 @@ class GenEditor(QMainWindow):
         item = self.model_list.currentItem().text()
         index = self.modelindices[item]
 
-        self.waterbox_renderer.create_drawlist(self.res_file.models[index], isbw1=self.res_file.is_bw())
+        self.waterbox_renderer.create_drawlist(self.res_file.models[index], game=self.res_file.game)
         self.waterbox_renderer.do_redraw()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
@@ -364,18 +374,21 @@ class GenEditor(QMainWindow):
 
 
 if __name__ == "__main__":
+    print("Running main")
     import sys
     import platform
-
+    print("Imported modules")
     app = QApplication(sys.argv)
+    print("Initialized application")
     if platform.system() == "Windows":
         import ctypes
         myappid = 'BW2ModelViewer'  # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-
+    
+    print("Running")
     with open("log.txt", "w") as f:
         f.write("")
-
+    
     with open("log.txt", "a") as f:
         #sys.stdout = f
         #sys.stderr = f

@@ -243,7 +243,22 @@ class Matrix4x4(object):
         self.b1, self.b2, self.b3, self.b4 = col2
         self.c1, self.c2, self.c3, self.c4 = col3
         self.d1, self.d2, self.d3, self.d4 = col4
-
+    
+    def multiply_mat4(self, othermat):
+        col1 = self.multiply_vec4(othermat.a1, othermat.a2, othermat.a3, othermat.a4)
+        col2 = self.multiply_vec4(othermat.b1, othermat.b2, othermat.b3, othermat.b4)
+        col3 = self.multiply_vec4(othermat.c1, othermat.c2, othermat.c3, othermat.c4)
+        col4 = self.multiply_vec4(othermat.d1, othermat.d2, othermat.d3, othermat.d4)
+        
+        mtx = Matrix4x4(0, 0, 0, 0,0, 0, 0, 0,0, 0, 0, 0,0, 0, 0, 0) 
+        
+        mtx.a1, mtx.a2, mtx.a3, mtx.a4 = col1
+        mtx.b1, mtx.b2, mtx.b3, mtx.b4 = col2
+        mtx.c1, mtx.c2, mtx.c3, mtx.c4 = col3
+        mtx.d1, mtx.d2, mtx.d3, mtx.d4 = col4
+        
+        return mtx
+        
     @classmethod
     def from_matrix(cls, matrix):
 

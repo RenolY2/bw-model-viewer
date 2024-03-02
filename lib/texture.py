@@ -110,6 +110,7 @@ class Texture(object):
         self.size_x = read_uint32(f)
         self.size_y = read_uint32(f)
         self.mipcount2 = read_uint32(f)
+        print(self.name)
         #print(self.size_x, self.size_x2)
         #print(self.size_y, self.size_y2)
         assert self.size_x == self.size_x2
@@ -375,6 +376,297 @@ class Texture(object):
         self.success = True
         #print("final steps took", default_timer()-start)
 
+    # Aragorn's Quest
+    def from_file_aragorn(self, f):
+        start = default_timer()
+
+        f.seek(0)
+        name = f.read(0x20)
+
+        self.size_x2 = read_uint32(f)
+        self.size_y2 = read_uint32(f)
+        self.unkint1 = read_uint32(f)
+        self.unkint2 = read_uint32(f)
+        self.format = f.read(0x10)
+        self.unkint3 = read_uint32(f)
+        self.unkint4 = read_uint32(f)
+        self.unkint5 = read_uint32(f)
+        self.unkint6 = read_uint32(f)
+        self.unkints = f.read(0x10)
+        self.unkint7 = read_uint32(f)
+        self.size_x = read_uint32(f)
+        self.size_y = read_uint32(f)
+        self.mipcount = read_uint32(f)
+        #print(self.size_x, self.size_x2)
+        #print(self.size_y, self.size_y2)
+        assert self.size_x == self.size_x2
+        assert self.size_y == self.size_y2
+        assert self.mipcount > 0
+        self.success = True
+
+        print(name, self.format)
+        assert self.format[8:] == b"8B8G8R8A"
+        if self.mipcount == 0:
+            self.success = False
+            return
+
+        texformat = self.format[:8]
+        self.rgba = bytearray(self.size_x * self.size_y * 4)
+
+        x, y = 0, 0
+        size_x = self.size_x
+        size_y = self.size_y
+        rgbadata = self.rgba
+        #print("Initialization took", default_timer() - start, "s")
+        start = default_timer()
+        if texformat == DXT1:
+            assert f.read(4) == b"RPIM"
+            pimsize = read_uint32_le(f)
+            f.read(0x18)  # padding
+            #pic_data = f.read(pimsize)
+
+            range_4 = range(0, 4)
+            range_16 = range(0, 16)
+            read = f.read
+
+            #for ii in range(0, len(pic_data) // 8, 4):
+            #    for ii2 in range_4:
+            #        block = pic_data[(ii + ii2) * 8:(ii + ii2 + 1) * 8]
+            for ii in range(0, (pimsize-0x18) // 8):
+
+                #col0, col1 = colors_unpack(block[:4])
+                #pixmask = pixelmask_unpack(block[4:])[0]
+
+                col0, col1, pixmask = tileunpack(read(8))
+
+                color0 = decode_rgb565(col0)
+                color1 = decode_rgb565(col1)
+
+                ii2 = ii % 4
+                iix = (ii2 % 2) * 4
+                iiy = (ii2 // 2) * 4
+
+                if col0 > col1:
+                    color2_r = (2 * color0[0] + color1[0]) // 3
+                    color2_g = (2 * color0[1] + color1[1]) // 3
+                    color2_b = (2 * color0[2] + color1[2]) // 3
+                    #color2_a = 255
+
+                    color3_r = (2 * color1[0] + color0[0]) // 3
+                    color3_g = (2 * color1[1] + color0[1]) // 3
+                    color3_b = (2 * color1[2] + color0[2]) // 3
+                    color3_a = 255
+                else:
+                    color2_r = (color0[0] + color1[0]) // 2
+                    color2_g = (color0[1] + color1[1]) // 2
+                    color2_b = (color0[2] + color1[2]) // 2
+                    #color2_a = 255
+                    color3_r = 0
+                    color3_g = 0
+                    color3_b = 0
+                    color3_a = 0
+
+                #colortable = (color0, color1,
+                #              (color2_r, color2_g, color2_b, color2_a),
+                #              (color3_r, color3_g, color3_b, color3_a))
+                for iii in range_16:
+                    iy = iii // 4
+                    ix = iii % 4
+                    index = (pixmask >> ((15 - (iy*4 + ix)) * 2)) & 0b11
+
+                    if index == 0:
+                        r, g, b = color0
+                        a = 255
+                    elif index == 1:
+                        r, g, b = color1
+                        a = 255
+                    elif index == 2:
+                        #r, g, b, a = color2_r, color2_g, color2_b, color2_a
+                        r = color2_r
+                        g = color2_g
+                        b = color2_b
+                        a = 255 #color2_a
+                    elif index == 3:
+                        #r, g, b, a = color3_r, color3_g, color3_b, color3_a
+                        r = color3_r
+                        g = color3_g
+                        b = color3_b
+                        a = color3_a
+                    else:
+                        raise RuntimeError("This shouldn't happen: Invalid index {0}".format(index))
+
+                    array_x = x + ix + iix
+                    array_y = y + iy + iiy
+                    if array_x < size_x and array_y < size_y:
+
+                        rgbadata[array_x*4 + array_y*size_x*4 + 0] = r
+                        rgbadata[array_x*4 + array_y * size_x*4 + 1] = g
+                        rgbadata[array_x*4 + array_y * size_x*4 + 2] = b
+                        rgbadata[array_x*4 + array_y * size_x*4 + 3] = a
+                        #else:
+                    #    print("tried to write outside of bounds:", size_x, size_y, x + ix + iix, y + iy + iiy)
+
+                if ii2 == 3:
+                    x += 8
+                    if x >= size_x:
+                        x = 0
+                        y += 8
+
+        elif texformat == I8:
+            assert f.read(4) == b"RPIM"
+            pimsize = read_uint32_le(f)
+            f.read(0x18)  # padding
+            #pic_data = f.read(pimsize)
+
+            blocks_horizontal = int(ceil(size_x / 4.0))
+            blocks_vertical = int(ceil(size_y / 4.0))
+
+            for iy in range(blocks_vertical):
+                for ix in range(blocks_horizontal):
+                    block = f.read(4*4*1)
+
+                    for y in range(4):
+                        for x in range(4):
+                            alphaintensity = block[(x + y * 4)]
+
+                            imgx = ix * 4 + x
+                            imgy = iy * 4 + y
+
+                            if imgx >= size_x or imgy >= size_y:
+                                continue
+
+                            rgbadata[(imgx + imgy * size_x) * 4 + 0] = alphaintensity
+                            rgbadata[(imgx + imgy * size_x) * 4 + 1] = alphaintensity
+                            rgbadata[(imgx + imgy * size_x) * 4 + 2] = alphaintensity
+                            rgbadata[(imgx + imgy * size_x) * 4 + 3] = alphaintensity
+
+        elif texformat == IA8:
+            assert f.read(4) == b"RPIM"
+            pimsize = read_uint32_le(f) - 0x18
+            f.read(0x18)  # padding
+            #pic_data = f.read(pimsize)
+
+            blocks_horizontal = int(ceil(size_x / 4.0))
+            blocks_vertical = int(ceil(size_y / 4.0))
+
+            for iy in range(blocks_vertical):
+                for ix in range(blocks_horizontal):
+                    block = f.read(4*4*2)
+
+                    for y in range(4):
+                        for x in range(4):
+                            intensity = block[(x + y*4)*2 + 1]
+                            alpha = block[(x + y * 4) * 2 + 0]
+
+                            imgx = ix * 4 + x
+                            imgy = iy * 4 + y
+
+                            if imgx >= size_x or imgy >= size_y:
+                                continue
+
+                            rgbadata[(imgx + imgy * size_x) * 4 + 0] = intensity
+                            rgbadata[(imgx + imgy * size_x) * 4 + 1] = intensity
+                            rgbadata[(imgx + imgy * size_x) * 4 + 2] = intensity
+                            rgbadata[(imgx + imgy * size_x) * 4 + 3] = alpha
+
+        elif texformat == P8:
+            assert f.read(4) == b" LAP"
+            pimsize = read_uint32_le(f)
+            assert pimsize == 512
+
+            palette = []
+            for i in range(256):
+                palette.append(decode_rgb5a3(read_uint16(f)))
+                #palette.append(decode_rgb565(read_uint16(f)))
+
+            assert f.read(4) == b"RPIM"
+
+            datalen = read_uint32_le(f)
+            f.read(0x18)  # padding
+
+            blocks_vertical = int(ceil(size_y / 4.0))
+            blocks_horizontal = int(ceil(size_x / 8.0))
+
+            for iy in range(blocks_vertical):
+                for ix in range(blocks_horizontal):
+                    block = f.read(8*4*1)
+                    if len(block) < 32:
+                        break
+
+                    for y in range(4):
+                        for x in range(8):
+                            imgx = ix * 8 + x
+                            imgy = iy * 4 + y
+
+                            if imgx >= size_x or imgy >= size_y:
+                                continue
+
+                            #intensity = block[(x + y*4)*2 + 1]
+                            #alpha = block[(x + y * 4) * 2 + 0]
+                            index = block[x + y*8]
+                            r, g, b, a = palette[index]# index, index, index, 255#palette[index]
+
+
+
+                            rgbadata[(imgx + imgy * size_x) * 4 + 0] = r
+                            rgbadata[(imgx + imgy * size_x) * 4 + 1] = g
+                            rgbadata[(imgx + imgy * size_x) * 4 + 2] = b
+                            rgbadata[(imgx + imgy * size_x) * 4 + 3] = a
+
+        elif texformat == RGBA:
+            assert f.read(4) == b"RPIM"
+            pimsize = read_uint32_le(f)
+            f.read(0x18)  # padding
+            #print("size")
+
+            for i in range(pimsize//64):
+                for iy in range(4):
+                    for ix in range(4):
+                        #ix = 3 - ix
+                        #iy = 3 - iy
+                        imgx = x + ix
+                        imgy = y + iy
+
+                        if imgx >= size_x or imgy >= size_y:
+                            continue
+
+                        a, r = read_uint8(f), read_uint8(f)
+                        rgbadata[(imgx + imgy * size_x) * 4 + 0] = r
+                        rgbadata[(imgx + imgy * size_x) * 4 + 3] = a
+
+                for iy in range(4):
+                    for ix in range(4):
+                        #ix = 3 - ix
+                        #iy = 3 - iy
+                        imgx = x + ix
+                        imgy = y + iy
+
+                        if imgx >= size_x or imgy >= size_y:
+                            continue
+
+                        g, b = read_uint8(f), read_uint8(f)
+                        rgbadata[(imgx + imgy * size_x) * 4 + 1] = g
+                        rgbadata[(imgx + imgy * size_x) * 4 + 2] = b
+
+                x += 4
+                if x >= size_x:
+                    x = 0
+                    y += 4
+
+
+        else:
+            #print("unknown format", texformat)
+            self.success = False
+            return
+
+
+        #print(self.size_x, self.size_y)
+        #print("conversion took", default_timer()-start)
+        start = default_timer()
+        self.rgba = bytes(self.rgba)
+        self._loaded = True
+        self.success = True
+        #print("final steps took", default_timer()-start)
 
     def from_file_bw1(self, f):
         start = default_timer()
@@ -650,7 +942,7 @@ class Texture(object):
 
 class TextureArchive(object):
     def __init__(self, archive):
-        self.is_bw1 = archive.is_bw()
+        self.game = archive.get_game()
 
         self.textures = {}
         for texture in archive.textures:
@@ -687,17 +979,22 @@ class TextureArchive(object):
         if texname not in self._cached:
             return None
 
-
+        tex: Texture
+        ID: int
         tex, ID = self._cached[texname]
 
         if tex.is_loaded():
             return self._cached[texname]
 
         f = self.textures[texname].fileobj
-        if self.is_bw1:
+        print(self.game)
+        print("what's uuuuuuuuuup")
+        if self.game == "BW1":
             tex.from_file_bw1(f)
-        else:
+        elif self.game == "BW2":
             tex.from_file(f)
+        elif self.game == "AQ":
+            tex.from_file_aragorn(f)
 
         if tex.success:
             #tex.dump_to_file(str(texname.strip(b"\x00"), encoding="ascii")+".png")

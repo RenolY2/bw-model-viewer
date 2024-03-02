@@ -10,8 +10,8 @@ from OpenGL.GLU import *
 from lib.vectors import Vector3, Plane, Triangle, Line
 from custom_widgets import catch_exception
 from lib.read_binary import *
-from lib.model_rendering import Box, Transform, BW2Model, BW1Model
-from lib.shader import create_shader, create_shaderSimple
+from lib.model_rendering import Box, Transform, BW2Model, BW1Model, AragornModel
+from lib.shader import create_shader, create_shaderSimple, create_shaderNoRotate
 
 
 def catch_exception_with_dialog(func):
@@ -157,6 +157,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
     def initializeGL(self):
         self.shader = create_shader()
         self.shaderSimple = create_shaderSimple()
+        self.shaderNoRotate = create_shaderNoRotate()
 
         print(self.shader)
         #self.shadershader.setUniform("firstSampler", 0);
@@ -246,19 +247,23 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
     def add_waterbox(self, waterbox):
         self.models.append(waterbox)
 
-    def create_drawlist(self, bwmodel, isbw1):
-        self.isbw1 = isbw1
+    def create_drawlist(self, bwmodel, game):
+        self.game = game
         data = bwmodel.entries[0]
         data.fileobj.seek(0)
         f = data.fileobj
 
-        if isbw1:
+        if game == "BW1":
             #print("Model is BW1")
             model = BW1Model()
             model.bgfname = bytes(bwmodel.res_name)
-        else:
+        elif game == "BW2":
             #print("Model is BW2")
             model = BW2Model()
+        elif game == "AQ":
+            model = AragornModel()
+        else:
+            raise RuntimeError("Unknown game: {0}".format(game))
 
         if self.main_model is not None:
             self.main_model.destroy()
@@ -281,7 +286,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
 
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(75, self.width/self.height, 1.0, 12800.0)
+        gluPerspective(75, self.width/self.height, 0.1, 1280.0)
 
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
@@ -344,7 +349,7 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
         #glCallList(self.main_model)
         #self.main_model.sort_render_order(self.camera_direction.x, self.camera_direction.y, self.camera_direction.z)
         #self.main_model.sort_render_order(self.offset_x, self.camera_height, -self.offset_y)
-        if not self.isbw1:
+        if self.game == "BW2":
             glUseProgram(self.shader)
             texvar = glGetUniformLocation(self.shader, "tex")
             #print(texvar, self.shader, type(self.shader))
@@ -352,16 +357,21 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
             bumpvar = glGetUniformLocation(self.shader, "bump")
             glUniform1i(bumpvar, 1)
             lightvar = glGetUniformLocation(self.shader, "light")
-        else:
+        elif self.game == "BW1":
             glUseProgram(self.shaderSimple)
             texvar = glGetUniformLocation(self.shaderSimple, "tex")
             # print(texvar, self.shader, type(self.shader))
             glUniform1i(texvar, 0)
             lightvar = glGetUniformLocation(self.shaderSimple, "light")
-
+        elif self.game == "AQ":
+            glUseProgram(self.shaderNoRotate)
+            texvar = glGetUniformLocation(self.shaderNoRotate, "tex")
+            # print(texvar, self.shader, type(self.shader))
+            glUniform1i(texvar, 0)
+            lightvar = glGetUniformLocation(self.shaderNoRotate, "light")
         currenttime = default_timer()
 
-        rot = (currenttime % 9)*40 - self.rotation
+        rot = (1 % 9)*40 - self.rotation
         glUniform3fv(lightvar, 1, (sin(radians(rot)), 0, cos(radians(rot))))
         self.do_redraw()
         i = 0
@@ -372,10 +382,12 @@ class RenderWindow(QtWidgets.QOpenGLWidget):
             i += 1
         if self.current_render_index > i:
             self.current_render_index = 0
-        if not self.isbw1:
+        if self.game == "BW2":
             self.main_model.render(self.texarchive, self.shader, self.current_render_index)
-        else:
+        elif self.game == "BW1":
             self.main_model.render(self.texarchive, self.shaderSimple, self.current_render_index)
+        elif self.game == "AQ":
+            self.main_model.render(self.texarchive, self.shaderNoRotate, self.current_render_index)
 
         glUseProgram(0)
         glFinish()
