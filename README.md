@@ -1,8 +1,8 @@
 # Battalion Wars Model Viewer
 
-This tool can view the 3d models of Battalion Wars and Battalion Wars 2.
+This tool can view the 3d models of Battalion Wars, Battalion Wars 2 and Aragorn's Quest (Wii).
 
-It opens .res or .res.gz files (resource archive of BW1 or BW2 containing models, textures, sounds and more) and 
+It opens .res or .res.gz files (resource archive of BW1/BW2/AQ containing models, textures, sounds and more) and 
 displays models. After opening an archive you will see a list of model names on the right that you can click to view the model.
 
 Model->Export current as OBJ exports the current model in the OBJ format. Transformations will be backed into the 
